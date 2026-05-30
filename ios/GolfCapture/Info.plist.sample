@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Info.plist.sample — required keys for the GolfCapture module.
+
+  These usage-description strings are MANDATORY: iOS crashes the app at the
+  moment it touches the camera or microphone if the matching key is missing.
+  Merge these into your app target's real Info.plist (don't ship this file as-is).
+
+  The high-frame-rate / background notes are optional but recommended.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- REQUIRED: shown in the camera permission prompt. -->
+    <key>NSCameraUsageDescription</key>
+    <string>GolfCapture uses the camera to record your swing at high speed for analysis.</string>
+
+    <!-- REQUIRED: shown in the microphone permission prompt. The mic is used by
+         the acoustic impact trigger, not for recording audio. -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>GolfCapture listens for the sound of club-ball impact to automatically capture your swing.</string>
+</dict>
+</plist>

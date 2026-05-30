@@ -39,6 +39,18 @@ final class CameraSessionManager: NSObject {
     /// Forwarded from the encoder; the coordinator pushes these into the ring.
     var onEncodedFrame: ((EncodedFrame) -> Void)?
 
+    /// Surfaces session lifecycle / health events so the UI can react (show an
+    /// overlay on interruption, warn on thermal pressure, recover on error).
+    var onStatusChange: ((Status) -> Void)?
+
+    /// Coarse health/lifecycle states the capture session can report.
+    enum Status {
+        case interrupted(reason: AVCaptureSession.InterruptionReason?)
+        case interruptionEnded
+        case runtimeError(Error)
+        case thermalStateChanged(ProcessInfo.ThermalState)
+    }
+
     let session = AVCaptureSession()
     private let sampleBufferQueue = DispatchQueue(label: "golf.capture.video", qos: .userInteractive)
     private let videoOutput = AVCaptureVideoDataOutput()
@@ -95,10 +107,63 @@ final class CameraSessionManager: NSObject {
         session.addOutput(videoOutput)
 
         session.commitConfiguration()
+        registerObservers()
     }
+
+    // MARK: - Lifecycle / health observers
+
+    /// Watch for interruptions (calls, control center, resource loss), runtime
+    /// errors (which can stop the session mid-capture), and thermal pressure
+    /// (sustained 240 FPS is a heat source — the UI may want to back off).
+    private func registerObservers() {
+        let nc = NotificationCenter.default
+        nc.addObserver(self, selector: #selector(sessionWasInterrupted(_:)),
+                       name: .AVCaptureSessionWasInterrupted, object: session)
+        nc.addObserver(self, selector: #selector(sessionInterruptionEnded(_:)),
+                       name: .AVCaptureSessionInterruptionEnded, object: session)
+        nc.addObserver(self, selector: #selector(sessionRuntimeError(_:)),
+                       name: .AVCaptureSessionRuntimeError, object: session)
+        nc.addObserver(self, selector: #selector(thermalStateChanged(_:)),
+                       name: ProcessInfo.thermalStateDidChangeNotification, object: nil)
+    }
+
+    @objc private func sessionWasInterrupted(_ note: Notification) {
+        var reason: AVCaptureSession.InterruptionReason?
+        if let raw = note.userInfo?[AVCaptureSessionInterruptionReasonKey] as? Int {
+            reason = AVCaptureSession.InterruptionReason(rawValue: raw)
+        }
+        onStatusChange?(.interrupted(reason: reason))
+    }
+
+    @objc private func sessionInterruptionEnded(_ note: Notification) {
+        onStatusChange?(.interruptionEnded)
+    }
+
+    @objc private func sessionRuntimeError(_ note: Notification) {
+        let error = note.userInfo?[AVCaptureSessionErrorKey] as? Error
+        onStatusChange?(.runtimeError(error ?? CaptureError.unknown))
+        // AVFoundation recommends restarting after a media-services-reset error.
+        if let avError = error as? AVError, avError.code == .mediaServicesWereReset {
+            sampleBufferQueue.async { [weak self] in self?.start() }
+        }
+    }
+
+    @objc private func thermalStateChanged(_ note: Notification) {
+        onStatusChange?(.thermalStateChanged(ProcessInfo.processInfo.thermalState))
+    }
+
+    deinit { NotificationCenter.default.removeObserver(self) }
 
     func start() { if !session.isRunning { session.startRunning() } }
     func stop()  { if session.isRunning  { session.stopRunning() }; encoder?.stop() }
+
+    /// The clock video frame PTS are measured on. Hand this to the audio trigger
+    /// so its impact timestamps land in the same timebase as the frames. On
+    /// iOS 15.4+ this is `synchronizationClock`; older OSes use `masterClock`.
+    var captureClock: CMClock? {
+        if #available(iOS 15.4, *) { return session.synchronizationClock ?? session.masterClock }
+        return session.masterClock
+    }
 
     // MARK: - Format & manual controls
 
@@ -168,7 +233,7 @@ final class CameraSessionManager: NSObject {
         if device.isLowLightBoostSupported { device.automaticallyEnablesLowLightBoostWhenAvailable = false }
     }
 
-    enum CaptureError: Error { case noCamera, cannotAddInput, cannotAddOutput, no240pFormat }
+    enum CaptureError: Error { case noCamera, cannotAddInput, cannotAddOutput, no240pFormat, emptyWindow, unknown }
 }
 
 // MARK: - Frame intake

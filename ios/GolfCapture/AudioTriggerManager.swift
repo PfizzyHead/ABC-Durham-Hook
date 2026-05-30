@@ -34,8 +34,16 @@ import Accelerate
 
 final class AudioTriggerManager {
 
-    /// Fired on impact with the host-clock timestamp of the detected transient.
+    /// Fired on impact with the impact timestamp expressed on the **capture
+    /// session's clock** (when `synchronizationClock` is set), so it can be
+    /// compared directly against video frame PTS for accurate slicing.
     var onImpact: ((CMTime) -> Void)?
+
+    /// The capture session's clock (`AVCaptureSession.synchronizationClock`).
+    /// The audio tap reports times on the host-time clock; we convert onto this
+    /// clock so audio impacts and video PTS live in the same timebase. If nil we
+    /// fall back to the raw host time (correct only if video also uses it).
+    var synchronizationClock: CMClock?
 
     private let engine = AVAudioEngine()
     private let blockSize = 1024
@@ -53,10 +61,12 @@ final class AudioTriggerManager {
     private var lastTriggerTime: CFTimeInterval = 0
     private let refractory: CFTimeInterval = 0.5      // ignore tail/echo for 0.5 s
 
-    // Tunables.
-    private let attackRatio: Float = 6.0   // onset must be ≥6× ambient floor
-    private let brightnessRatio: Float = 0.45 // ≥45% of energy in the high band
-    private let highBandHz: Float = 2000   // "high" starts here
+    // Tunables — exposed as `var` so they can be calibrated in the field
+    // (e.g. from a debug UI) without recompiling. Defaults are conservative
+    // starting points for an outdoor driver/iron impact.
+    var attackRatio: Float = 6.0      // onset must be ≥6× ambient floor
+    var brightnessRatio: Float = 0.45 // ≥45% of energy in the high band
+    var highBandHz: Float = 2000      // "high" starts here
 
     init() {
         self.log2n = vDSP_Length(log2(Float(blockSize)))
@@ -96,6 +106,16 @@ final class AudioTriggerManager {
 
     // MARK: - Hot path (audio render thread) — no allocations
 
+    /// Pure detection decision, split out so the attack+brightness gating is
+    /// unit-testable without driving real audio through the engine. An impact is
+    /// a fast onset (RMS well above the ambient floor) AND a bright spectrum.
+    static func isImpact(rms: Float, ambient: Float, brightness: Float,
+                         attackRatio: Float, brightnessRatio: Float) -> Bool {
+        let isAttack = rms > ambient * attackRatio
+        let isBright = brightness >= brightnessRatio
+        return isAttack && isBright
+    }
+
     private func process(_ buffer: AVAudioPCMBuffer, sampleRate: Float, time: AVAudioTime) {
         guard let channel = buffer.floatChannelData?[0] else { return }
         let n = Int(buffer.frameLength)
@@ -125,16 +145,26 @@ final class AudioTriggerManager {
         vDSP_sve(Array(magnitudes[highBin...]), 1, &high, vDSP_Length(magnitudes.count - highBin))
         let brightness = total > 0 ? high / total : 0
 
-        let isAttack = rms > ambientRMS * attackRatio
-        let isBright = brightness >= brightnessRatio
+        let trigger = Self.isImpact(rms: rms, ambient: ambientRMS, brightness: brightness,
+                                    attackRatio: attackRatio, brightnessRatio: brightnessRatio)
 
-        if isAttack && isBright {
+        if trigger {
             let now = CACurrentMediaTime()
             if now - lastTriggerTime > refractory {
                 lastTriggerTime = now
-                // Map the audio host time to the shared CM clock for ring slicing.
-                let pts = CMClockMakeHostTimeFromSystemUnits(time.hostTime)
-                onImpact?(pts)
+                // The tap's hostTime is on the host-time clock. Convert it onto
+                // the capture session's clock so the impact instant lines up with
+                // video frame PTS (sub-frame accurate pre-roll). Without a sync
+                // clock we return the host time unchanged.
+                let hostClock = CMClockGetHostTimeClock()
+                let impactHost = CMClockMakeHostTimeFromSystemUnits(time.hostTime)
+                let impact: CMTime
+                if let syncClock = synchronizationClock {
+                    impact = CMSyncConvertTime(impactHost, from: hostClock, to: syncClock)
+                } else {
+                    impact = impactHost
+                }
+                onImpact?(impact)
             }
         } else {
             // Update the ambient floor only on non-impact blocks (slow EMA).

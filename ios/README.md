@@ -80,14 +80,50 @@ coordinator.onClipReady = { result in
     case .failure(let err): print("Export failed: \(err)")
     }
 }
-try coordinator.startSession()   // requires camera + microphone permissions
+coordinator.onStatusChange = { status in
+    // .interrupted / .interruptionEnded / .runtimeError / .thermalStateChanged
+    print("Capture status: \(status)")
+}
+
+// Request permission first, then start on the main thread.
+coordinator.requestPermissions { granted in
+    guard granted else { return }   // camera AND microphone both required
+    DispatchQueue.main.async { try? coordinator.startSession() }
+}
 ```
 
-Add to `Info.plist`: `NSCameraUsageDescription`, `NSMicrophoneUsageDescription`.
+Add to `Info.plist`: `NSCameraUsageDescription`, `NSMicrophoneUsageDescription`
+(see `GolfCapture/Info.plist.sample`).
+
+### Clock alignment
+
+`startSession()` reads the capture session's clock (`synchronizationClock`, or
+`masterClock` pre-iOS 15.4) via `camera.captureClock` and hands it to the audio
+trigger. The trigger converts each impact's host time onto that clock with
+`CMSyncConvertTime`, so impact timestamps and video frame PTS share one timebase
+and the pre/post-roll window is sliced accurately.
+
+### Session health
+
+`onStatusChange` surfaces interruptions (calls, Control Center), runtime errors
+(the manager auto-restarts on `mediaServicesWereReset`), and thermal-state
+changes — sustained 240 FPS is a heat source, so the UI can warn or back off.
+
+## Tests
+
+`GolfCaptureTests/` contains XCTest unit tests that run on the **Simulator or
+macOS — no device or camera required**, so they belong in CI:
+- `FrameRingBufferTests` — FIFO eviction/ordering, wrap-around, and the
+  keyframe-aligned window slicing (`windowIndices`).
+- `AudioTriggerTests` — the attack+brightness gating decision (`isImpact`).
+
+Add these to a unit-test target that links the `GolfCapture` sources
+(`@testable import GolfCapture`).
 
 ## Field-tuning knobs
 
-- `AudioTriggerManager`: `attackRatio`, `brightnessRatio`, `highBandHz`, `refractory`.
+- `AudioTriggerManager`: `attackRatio`, `brightnessRatio`, `highBandHz` (now
+  `var` — adjustable at runtime from a debug UI), and `refractory`.
 - `CameraSessionManager`: `shutter` (default 1/2000 s) and the ISO clamp in
   `applyManualControls` — raise ISO for indoor/low light since the fast shutter
   starves the sensor.

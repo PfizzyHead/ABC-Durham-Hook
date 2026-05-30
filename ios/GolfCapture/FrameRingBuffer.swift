@@ -94,13 +94,33 @@ final class FrameRingBuffer {
     /// decodable. Used by ClipExporter to carve the pre/post-impact window.
     func frames(in start: CMTime, _ end: CMTime) -> [EncodedFrame] {
         let all = snapshot()
+        let range = Self.windowIndices(timeline: all.map(\.pts),
+                                       isKeyframe: all.map(\.isKeyframe),
+                                       start: start, end: end)
+        return Array(all[range])
+    }
+
+    /// Pure index math behind `frames(in:)`, split out so the keyframe-snap and
+    /// windowing rules are unit-testable without constructing real sample buffers.
+    ///
+    /// Returns the half-open range of indices to include: every frame with
+    /// `pts <= end`, starting from the last key frame at or before `start` (so
+    /// the clip begins on a decodable boundary). Inputs are assumed PTS-sorted.
+    static func windowIndices(timeline: [CMTime], isKeyframe: [Bool],
+                              start: CMTime, end: CMTime) -> Range<Int> {
+        precondition(timeline.count == isKeyframe.count)
+        guard !timeline.isEmpty else { return 0..<0 }
+
         // Walk back to the last key frame at or before the window start.
         var keyIndex = 0
-        for (i, f) in all.enumerated() {
-            if f.pts <= start && f.isKeyframe { keyIndex = i }
-            if f.pts > end { break }
+        for i in timeline.indices {
+            if timeline[i] <= start && isKeyframe[i] { keyIndex = i }
+            if timeline[i] > end { break }
         }
-        return all[keyIndex...].prefix { $0.pts <= end }.map { $0 }
+        // Extend forward to the last frame within the window.
+        var endIndex = keyIndex
+        while endIndex < timeline.count && timeline[endIndex] <= end { endIndex += 1 }
+        return keyIndex..<endIndex
     }
 
     /// Drop all references (e.g. between sessions). Frees every backing buffer.

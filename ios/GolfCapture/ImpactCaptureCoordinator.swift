@@ -23,6 +23,10 @@ final class ImpactCaptureCoordinator {
     /// Delivered when a swing clip has been written (or on failure).
     var onClipReady: ((Result<URL, Error>) -> Void)?
 
+    /// Surfaces capture-session health (interruption, thermal, runtime error)
+    /// so the UI can react. Forwarded straight from `CameraSessionManager`.
+    var onStatusChange: ((CameraSessionManager.Status) -> Void)?
+
     private let camera = CameraSessionManager()
     private let audio = AudioTriggerManager()
     private let ring = FrameRingBuffer(capacity: 720)   // 3 s @ 240 FPS
@@ -34,13 +38,28 @@ final class ImpactCaptureCoordinator {
     private let work = DispatchQueue(label: "golf.coordinator")
     private var isExporting = false
 
+    /// Request camera + microphone permission up front. Call before `startSession`.
+    /// Completion is invoked on an arbitrary queue with `true` only if BOTH are granted.
+    func requestPermissions(_ completion: @escaping (Bool) -> Void) {
+        AVCaptureDevice.requestAccess(for: .video) { videoOK in
+            guard videoOK else { completion(false); return }
+            AVCaptureDevice.requestAccess(for: .audio) { audioOK in
+                completion(audioOK)
+            }
+        }
+    }
+
     func startSession() throws {
         // Encoded frames flow into the bounded ring buffer.
         camera.onEncodedFrame = { [weak self] frame in self?.ring.append(frame) }
+        camera.onStatusChange = { [weak self] status in self?.onStatusChange?(status) }
         // Impact freezes the window and schedules a slice export.
         audio.onImpact = { [weak self] impactPTS in self?.handleImpact(at: impactPTS) }
 
         try camera.configure()
+        // Align the audio trigger's timestamps to the video frame clock so the
+        // pre/post-roll window is sliced accurately.
+        audio.synchronizationClock = camera.captureClock
         camera.start()
         try audio.start()
     }
@@ -68,7 +87,7 @@ final class ImpactCaptureCoordinator {
                 let slice = self.ring.frames(in: start, end)
                 guard !slice.isEmpty else {
                     self.isExporting = false
-                    self.onClipReady?(.failure(CameraSessionManager.CaptureError.no240pFormat))
+                    self.onClipReady?(.failure(CameraSessionManager.CaptureError.emptyWindow))
                     return
                 }
                 let url = FileManager.default.temporaryDirectory

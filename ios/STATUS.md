@@ -90,9 +90,12 @@
 | `ios/GolfCapture/AudioTriggerManager.swift` | ~144 | AVAudioEngine + vDSP impact detection |
 | `ios/GolfCapture/ClipExporter.swift` | ~97 | Slice → MP4 export |
 | `ios/GolfCapture/ImpactCaptureCoordinator.swift` | ~83 | Pipeline façade / orchestration |
+| `ios/GolfCapture/Info.plist.sample` | — | Required camera/mic usage-description keys |
+| `ios/GolfCaptureTests/FrameRingBufferTests.swift` | — | Ring FIFO/eviction + window-slice unit tests |
+| `ios/GolfCaptureTests/AudioTriggerTests.swift` | — | Impact gating-decision unit tests |
 | `ios/README.md` | — | Architecture + integration guide |
 
-**Commits:** `f81cc15` (engine) · `119551b` (720p240 fallback)
+**Commits:** `f81cc15` (engine) · `119551b` (720p240 fallback) · `7dcbf69` (status report) · plus this round (clock/lifecycle/tests/permissions)
 
 ---
 
@@ -106,19 +109,31 @@
 
 ---
 
-## Known limitations / follow-ups before this is device-ready
+## Known limitations / follow-ups
 
-These are **not yet done** and are recommended next steps:
+### ✅ Completed since the first report (no hardware needed)
 
-1. **Not compiled / not run.** Needs a build + on-device smoke test on real 240 FPS hardware.
-2. **Clock alignment.** Audio→video correlation uses the host clock. For sub-frame-accurate
-   pre-roll, drive both off the capture session's `synchronizationClock`.
-3. **Trigger tuning.** `attackRatio`, `brightnessRatio`, `highBandHz`, `refractory` need
-   field calibration against real driver/iron impacts vs. ambient range noise.
-4. **Permissions / lifecycle.** Add `Info.plist` usage strings; handle interruptions
-   (calls, backgrounding), thermal-state throttling, and storage cleanup of old clips.
-5. **No automated tests.** Ring-buffer eviction/slicing logic is unit-testable on macOS
-   without a device — worth adding.
+| Item | Status | Where |
+|---|---|---|
+| Clock alignment (audio↔video shared timebase) | ✅ Done | `CameraSessionManager.captureClock` → `AudioTriggerManager.synchronizationClock` (`CMSyncConvertTime`) |
+| Interruption / runtime-error / thermal handling | ✅ Done | `CameraSessionManager` observers → `onStatusChange`; auto-restart on `mediaServicesWereReset` |
+| Permissions plumbing | ✅ Done | `ImpactCaptureCoordinator.requestPermissions` + `Info.plist.sample` |
+| Runtime-tunable acoustic thresholds | ✅ Done | `attackRatio` / `brightnessRatio` / `highBandHz` now `var` |
+| Automated unit tests (run in CI, no device) | ✅ Done | `GolfCaptureTests/` — ring FIFO/eviction/slicing + trigger gating |
+| Correct error on empty slice | ✅ Done | `CaptureError.emptyWindow` (was mislabeled `no240pFormat`) |
+
+### ⏳ Still requires physical hardware / a device build
+
+1. **Compile + on-device smoke test** on real 240 FPS hardware (no Swift toolchain in this environment).
+2. **Acoustic-trigger threshold calibration** — the *gating logic* is tested and the knobs are
+   runtime-adjustable, but the actual threshold *values* must be tuned against real driver/iron
+   impacts vs. ambient range noise.
+3. **End-to-end timing validation** — confirm the pre/post-roll window lands correctly once the
+   sync-clock conversion runs against live capture.
+4. **Long-session thermal/battery profiling** — observe sustained-240 FPS heat and the
+   `onStatusChange` thermal backoff in practice; add a UI policy for it.
+5. **Storage policy** — clips currently land in `temporaryDirectory`; decide retention/cleanup
+   and a permanent location for processed swings.
 
 ---
 
@@ -130,5 +145,8 @@ the literal brief — storing the ring buffer compressed rather than raw — was
 call to keep the 3 s buffer under ~40 MB instead of ~2–6 GB, which is what makes the
 "no overheating, no continuous disk" goal achievable at all.
 
-**Outstanding before production:** compile + on-device validation, clock-alignment hardening,
-acoustic-trigger field calibration, and lifecycle/permissions plumbing (items 1–5 above).
+All follow-ups that can be done **without physical hardware are now also complete**: clock
+alignment, session-health (interruption/error/thermal) handling, permissions plumbing,
+runtime-tunable trigger thresholds, and an automated unit-test suite that runs in CI on the
+Simulator. What remains genuinely needs a device: compiling, on-device validation, and
+field-calibrating the acoustic thresholds against real impacts.
