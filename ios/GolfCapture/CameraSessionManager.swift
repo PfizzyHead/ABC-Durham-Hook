@@ -42,12 +42,20 @@ final class CameraSessionManager: NSObject {
     let session = AVCaptureSession()
     private let sampleBufferQueue = DispatchQueue(label: "golf.capture.video", qos: .userInteractive)
     private let videoOutput = AVCaptureVideoDataOutput()
-    private let encoder = VideoEncoder()
+    private var encoder: VideoEncoder!          // sized to the format we actually get
     private var device: AVCaptureDevice?
 
     private let targetFPS: Double = 240
-    private let targetWidth: Int32 = 1920
-    private let targetHeight: Int32 = 1080
+    /// Resolution preference, best → acceptable. Not every device exposes a
+    /// native 1080p240 format — many older/again budget devices top out at
+    /// 720p240 — so we degrade gracefully instead of failing the session.
+    private let preferredResolutions: [(width: Int32, height: Int32)] = [
+        (1920, 1080),   // preferred: full 1080p
+        (1280, 720),    // fallback:  720p still gives 240 FPS on most devices
+    ]
+    /// The resolution actually selected by `selectHighSpeedFormat`.
+    private(set) var activeWidth: Int32 = 1920
+    private(set) var activeHeight: Int32 = 1080
     /// 1/2000 s — fast enough to freeze a driver face at impact.
     private let shutter = CMTime(value: 1, timescale: 2000)
 
@@ -67,9 +75,12 @@ final class CameraSessionManager: NSObject {
         guard session.canAddInput(input) else { throw CaptureError.cannotAddInput }
         session.addInput(input)
 
-        try selectHighSpeedFormat(on: device)
+        try selectHighSpeedFormat(on: device)   // sets activeWidth/activeHeight
         try applyManualControls(on: device)
 
+        // Build the encoder for the resolution we actually got (1080p or 720p),
+        // so its VTCompressionSession dimensions match the incoming frames.
+        encoder = VideoEncoder(width: activeWidth, height: activeHeight)
         // Encoder output → ring (via coordinator). Set before output is wired.
         encoder.onEncodedFrame = { [weak self] frame in self?.onEncodedFrame?(frame) }
         try encoder.start()
@@ -87,25 +98,37 @@ final class CameraSessionManager: NSObject {
     }
 
     func start() { if !session.isRunning { session.startRunning() } }
-    func stop()  { if session.isRunning  { session.stopRunning() }; encoder.stop() }
+    func stop()  { if session.isRunning  { session.stopRunning() }; encoder?.stop() }
 
     // MARK: - Format & manual controls
 
-    /// Find and activate the format that is exactly 1080p and supports ≥240 FPS.
-    /// You cannot simply *ask* for 240 FPS — you must match an AVCaptureDevice.Format.
+    /// Activate a ≥240 FPS format, preferring 1080p and falling back to 720p.
+    /// You cannot simply *ask* for 240 FPS — you must match an AVCaptureDevice.Format,
+    /// and not every device advertises one at 1080p, so we try each resolution in
+    /// `preferredResolutions` order and take the first the hardware supports.
     private func selectHighSpeedFormat(on device: AVCaptureDevice) throws {
-        let match = device.formats.first { format in
-            let dims = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
-            let resOK = dims.width == targetWidth && dims.height == targetHeight
-            let fpsOK = format.videoSupportedFrameRateRanges.contains {
-                $0.maxFrameRate >= targetFPS
+        var chosen: (format: AVCaptureDevice.Format, width: Int32, height: Int32)?
+        for res in preferredResolutions {
+            let match = device.formats.first { format in
+                let dims = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+                let resOK = dims.width == res.width && dims.height == res.height
+                let fpsOK = format.videoSupportedFrameRateRanges.contains {
+                    $0.maxFrameRate >= targetFPS
+                }
+                return resOK && fpsOK
             }
-            return resOK && fpsOK
+            if let match {
+                chosen = (match, res.width, res.height)
+                break
+            }
         }
-        guard let format = match else { throw CaptureError.no240pFormat }
+        guard let chosen else { throw CaptureError.no240pFormat }
+
+        activeWidth = chosen.width
+        activeHeight = chosen.height
 
         try device.lockForConfiguration()
-        device.activeFormat = format
+        device.activeFormat = chosen.format
         // Pin BOTH min and max frame duration to 1/240 → a hard, constant 240 FPS.
         let frameDuration = CMTime(value: 1, timescale: Int32(targetFPS))
         device.activeVideoMinFrameDuration = frameDuration

@@ -8,10 +8,20 @@
 > toolchain in CI here, so the code has not been compiled in this environment.
 
 Native iOS (Swift / AVFoundation) capture pipeline for a mobile golf launch
-monitor. Locks the camera at **1080p @ 240 FPS**, freezes the club with a manual
-**≤1/2000 s shutter** at **infinity focus**, keeps a rolling **3‑second** buffer
-in RAM, and dumps a **2.5 s** clip (1.0 s pre + 1.5 s post impact) to MP4 when an
-**acoustic impact trigger** fires.
+monitor. Locks the camera at **1080p @ 240 FPS** (falling back to **720p @ 240
+FPS** on devices that lack a native 1080p240 format), freezes the club with a
+manual **≤1/2000 s shutter** at **infinity focus**, keeps a rolling **3‑second**
+buffer in RAM, and dumps a **2.5 s** clip (1.0 s pre + 1.5 s post impact) to MP4
+when an **acoustic impact trigger** fires.
+
+### Resolution fallback
+
+`CameraSessionManager` walks `preferredResolutions` (1080p → 720p) and activates
+the first format the hardware advertises at ≥240 FPS. The encoder is then built
+to match the resolution actually selected (`activeWidth`/`activeHeight`), so the
+`VTCompressionSession` dimensions always line up with the incoming frames. Only
+if *no* 240 FPS format exists at any listed resolution does `configure()` throw
+`no240pFormat`.
 
 ## Architecture
 
