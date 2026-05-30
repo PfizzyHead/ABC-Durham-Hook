@@ -1,0 +1,45 @@
+name: iOS Capture Engine Tests
+
+# Runs the GolfCapture unit suites (ring-buffer slicing + acoustic-trigger
+# gating) on the iOS Simulator. No physical device required. Only triggers on
+# changes under ios/ so it never runs for the unrelated Node.js web app.
+
+on:
+  push:
+    branches: [ master, "claude/**" ]
+    paths: [ "ios/**" ]
+  pull_request:
+    paths: [ "ios/**" ]
+
+jobs:
+  test:
+    name: Simulator unit tests
+    runs-on: macos-14          # GitHub-hosted macOS runner ships Xcode + Simulators
+    defaults:
+      run:
+        working-directory: ios
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: swift --version && xcodebuild -version
+
+      # swift-tools-version 5.9 packages build/test through xcodebuild against an
+      # iOS Simulator destination. The module is iOS-only (AVAudioSession +
+      # manual AVCaptureDevice controls), so a bare `swift test` on the macOS
+      # host would not compile — the simulator is the device-free path.
+      - name: Run unit tests (iOS Simulator)
+        run: |
+          xcodebuild test \
+            -scheme GolfCapture \
+            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            -resultBundlePath TestResults.xcresult \
+            CODE_SIGNING_ALLOWED=NO | xcpretty || exit ${PIPESTATUS[0]}
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcresult
+          path: ios/TestResults.xcresult
+          if-no-files-found: ignore

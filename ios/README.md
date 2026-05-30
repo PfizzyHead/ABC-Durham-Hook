@@ -109,16 +109,40 @@ and the pre/post-roll window is sliced accurately.
 (the manager auto-restarts on `mediaServicesWereReset`), and thermal-state
 changes — sustained 240 FPS is a heat source, so the UI can warn or back off.
 
-## Tests
+## Build & test
 
-`GolfCaptureTests/` contains XCTest unit tests that run on the **Simulator or
-macOS — no device or camera required**, so they belong in CI:
+A `Package.swift` targets the existing folders directly (no files moved), so the
+engine builds and the unit suites run **on the iOS Simulator — no physical
+device required**:
+
+```sh
+cd ios
+xcodebuild test \
+  -scheme GolfCapture \
+  -destination 'platform=iOS Simulator,name=iPhone 15' \
+  CODE_SIGNING_ALLOWED=NO
+```
+
+> Why the Simulator and not a bare `swift test`: the engine imports
+> `AVAudioSession` and uses iOS-only manual `AVCaptureDevice` controls
+> (`setExposureModeCustom`, `setFocusModeLockedWithLensPosition`, white-balance
+> lock, interruption notifications), which don't exist on the macOS host. The
+> Simulator is the device-free way to compile and test the pure logic.
+
+CI runs exactly this on every `ios/**` change — see
+[`.github/workflows/ios-tests.yml`](../.github/workflows/ios-tests.yml).
+
+`GolfCaptureTests/` (`@testable import GolfCapture`):
 - `FrameRingBufferTests` — FIFO eviction/ordering, wrap-around, and the
   keyframe-aligned window slicing (`windowIndices`).
 - `AudioTriggerTests` — the attack+brightness gating decision (`isImpact`).
 
-Add these to a unit-test target that links the `GolfCapture` sources
-(`@testable import GolfCapture`).
+To use the engine inside an app instead, drag the `GolfCapture/` sources into
+your target, or add this package as a local SPM dependency.
+
+> ⚠️ Not yet verified: there is no Swift toolchain in the authoring environment,
+> so the package/tests have not been compiled or run. First CI run on a macOS
+> runner is the real check.
 
 ## Field-tuning knobs
 
@@ -129,4 +153,3 @@ Add these to a unit-test target that links the `GolfCapture` sources
   starves the sensor.
 - `VideoEncoder`: `keyframeInterval` — smaller = tighter slice boundaries, larger
   bitrate; swap `kCMVideoCodecType_H264` → HEVC for smaller buffers on A11+.
-```

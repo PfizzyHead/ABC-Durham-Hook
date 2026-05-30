@@ -120,11 +120,16 @@
 | Permissions plumbing | ✅ Done | `ImpactCaptureCoordinator.requestPermissions` + `Info.plist.sample` |
 | Runtime-tunable acoustic thresholds | ✅ Done | `attackRatio` / `brightnessRatio` / `highBandHz` now `var` |
 | Automated unit tests (run in CI, no device) | ✅ Done | `GolfCaptureTests/` — ring FIFO/eviction/slicing + trigger gating |
+| Buildable package + CI wiring | ✅ Done | `Package.swift` (SPM, iOS) + `.github/workflows/ios-tests.yml` (Simulator) |
 | Correct error on empty slice | ✅ Done | `CaptureError.emptyWindow` (was mislabeled `no240pFormat`) |
 
 ### ⏳ Still requires physical hardware / a device build
 
-1. **Compile + on-device smoke test** on real 240 FPS hardware (no Swift toolchain in this environment).
+0. **First CI run / compile verification.** A `Package.swift` and a Simulator
+   `xcodebuild test` workflow now exist, but **nothing has been compiled** — there
+   is no Swift toolchain in the authoring environment. The first GitHub macOS-runner
+   build is the real check that the package, sources, and tests compile.
+1. **On-device smoke test** on real 240 FPS hardware (the Simulator exercises only the pure logic, not live capture).
 2. **Acoustic-trigger threshold calibration** — the *gating logic* is tested and the knobs are
    runtime-adjustable, but the actual threshold *values* must be tuned against real driver/iron
    impacts vs. ambient range noise.
