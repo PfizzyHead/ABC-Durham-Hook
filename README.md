@@ -1,101 +1,83 @@
-<p align="center">
- <img src="https://raw.githubusercontent.com/JuanmaMenendez/website-change-monitor/master/public/logo.png" alt="Website Change Monitor" width="300px">
-</p>
- 
- <h1 align="center"> Website Change Monitor </h1>
+# Meeting Live Transcribe
 
-<h3 align="center"> A small web app written in Node.js to monitor specific changes on a web page</h3>
-<br /> 
+A small **Windows desktop app** (Electron) that taps your system audio — i.e.
+whatever a meeting app is playing (Zoom, Teams, Google Meet, native *or* in a
+browser) — and shows a **real-time, fully-local transcription** using Whisper.
 
-<!--- BADGES-->
+- 🔒 **Fully local inference.** Your audio never leaves the machine. The Whisper
+  model weights are downloaded once from Hugging Face on first run, then cached
+  and used offline.
+- 🎧 **Passthrough by design.** Capture uses WASAPI **loopback**, a
+  non-destructive tap on the output device — so the meeting keeps playing to
+  your Bluetooth earbuds normally. The app only *listens*; it never replays
+  audio (which would cause feedback).
+- 🪟 **Works with any meeting source.** Because it captures at the OS audio
+  layer, it doesn't care which app the meeting runs in.
 
-<div align="center">
-    <img src="https://img.shields.io/badge/-website--monitor-blue.svg" alt="Website Monitor" />   
-    <a href="https://nodejs.org/en/">
-        <img src="https://img.shields.io/badge/node%40latest-%3E%3D%2010-brightgreen.svg" alt="NodeJS" /></a>   
-    <a href="https://GitHub.com/JuanmaMenendez/Website-Change-Monitor/graphs/commit-activity"> 
-        <img src="https://img.shields.io/badge/Maintained%3F-yes-green.svg" alt="Maintenance"></a>
-    <img src="https://img.shields.io/badge/contributions-welcome-orange.svg" alt="Contributions Welcome">
-    <a href="https://github.com/JuanmaMenendez/Website-Change-Monitor/blob/master/LICENSE">
-        <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
-</div>
-
-
-## Features
-
-*  Support any public web page
-
-*  Track specific parts (text, markup, css class, img, etc..)
-
-*  Custom tracking frequency (seconds, minutes, hours, days)
-
-*  Email alert notification (with [SendGrid](https://sendgrid.com/))
- 
-*  Slack alert notification 
-
-*  Daily email to confirm that the app is working
-
-*  Front page (just to check that the system is working and to ping it if necessary (Useful for Heroku) 
-
-<br /> 
+> **Status: Phase 1 scaffold.** Goal of this phase is to prove the pipeline:
+> capture system audio → live captions on screen → save transcript. See
+> *Roadmap* below.
 
 ## How it works
 
-The App request the `urlToCheck` every `checkingFrequency` and if any of the `elementsToSearchFor` are detected, a notification is sent to your Slack channel and all the `emailsToAlert` list.
+```
+Meeting app (any)
+      │  audio rendered to your default output (earbuds)
+      ▼
+ WASAPI loopback tap  ──►  Electron app
+                              ├─► AudioContext @ 16 kHz → 6s chunks
+                              │       └─► Whisper (Transformers.js, WebGPU/WASM)
+                              │               └─► live transcript (saveable)
+                              └─► (no playback — passthrough is automatic)
+```
 
-<br />
+## Requirements
 
-## Installation
+- Windows 10/11
+- [Node.js](https://nodejs.org/) 18+ (to install/run)
+- A GPU with WebGPU helps a lot (Whisper falls back to CPU/WASM otherwise)
+- Internet access **on first run only**, to download the model weights
 
-1. Clone this repo `git clone https://github.com/JuanmaMenendez/website-change-monitor.git`
+## Setup
 
-2. Inside the "website-change-monitor" folder, run the command `npm install`
+```bash
+npm install
+npm start
+```
 
-3. In *server.js*, edit the *"Main configuration variables"* 
-    ```
-    urlToCheck = "http://urlyouwant.com/tocheck";
-    elementsToSearchFor = ['Text you want to watch for', 'imageYouWantToCheckItsExistence.png'];
-    checkingFrequency = 5 * 60000;  //5 minutes
-    ```
+First launch downloads the Whisper model (`whisper-base.en` by default), so the
+first run takes a minute. Then:
 
-4. **Slack** Integration
+1. Start your meeting and make sure its audio is playing to your normal output
+   (your earbuds).
+2. Click **Start** and approve the screen/audio share prompt.
+3. Watch the live transcript. **Save transcript** writes a `.txt` file.
 
-   4.1 Activate the [WebHooks in your WorkSpace](https://api.slack.com/incoming-webhooks) and get the corresponding 'WebHook URL'  
-   
-   4.2 In *server.js*, set the 'WebHook URL' in `SLACK_WEBHOOK_URL = 'https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX';`  
+## Configuration
 
-5. **SendGrid** Email Integration
+Edit the tunables at the top of `renderer/renderer.js`:
 
-    5.1 Create a [SendGrid Free Account](https://sendgrid.com/pricing/)
-    
-    5.2 Create and get an [API KEY with Full Access](https://app.sendgrid.com/settings/api_keys)
-    
-    5.3 In *server.js*, set the *'API KEYS'* in `SENDGRID_APY_KEY = 'AA.AAAA_AAAAAAAAAAAAA.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';`
-     
-    5.4 In *server.js*, set the sender email in the *emailFrom* variable. Code: `emailFrom = "aaa@aaa.com";`
-    
-      Now, to avoid falling into the "SPAM" folder there are two options:
+| Constant | Default | Notes |
+|---|---|---|
+| `MODEL` | `Xenova/whisper-base.en` | `whisper-tiny.en` = faster, `whisper-small.en` = more accurate |
+| `CHUNK_SECONDS` | `6` | Lower = snappier captions, higher = better accuracy |
 
-      a) Configure SendGrid to white list your sender email.
-     
-      Go to [https://app.sendgrid.com/settings/mail_settings](https://app.sendgrid.com/settings/mail_settings) > *Address Whitelist* > *Edit* > Add your email address (Eg: *myemail@gmail.com*) > Switch to *ON*
-       
-      Note: For a less chance to fall in the SPAM folder, use an email address that you own and one of [these methods](https://sendgrid.com/blog/email-authentication-explained/) to validate it.
-     
-      b) Put any email address in the `emailFrom` variable and add it to the *white list* in the receiver email client.
-         
-    5.5 In *server.js*, set the *emailsToAlert* array. Code: `emailsToAlert = ["emailOneToSend@theAlert.com", "emailTwoToSend@theAlert.com"];` 
+## Roadmap
 
-<br /> 
+- **Phase 1 (this):** capture system audio + live captions + save. ✅
+- **Phase 2:** sliding-window chunking with overlap (fewer word cuts), output
+  device picker, timestamps, autosave.
+- **Phase 3:** optional bundled `whisper.cpp` for a fully offline (no first-run
+  download) build; optional text-to-speech read-back to earbuds; macOS support
+  via ScreenCaptureKit.
 
-## Usage
+## Notes & limitations
 
-1. `node server.js`
+- Phase 1 transcribes fixed ~6-second chunks, so a word occasionally gets cut at
+  a chunk boundary. Phase 2's overlap fixes this.
+- `ScriptProcessorNode` is deprecated but used here for simplicity; it will move
+  to an `AudioWorklet` later.
 
-<br /> 
+## License
 
-## Extras
-
-* To update the "Working OK" email notification frequency, you can change the variable `checkingNumberBeforeWorkingOKEmail`. By default it is set to 1440 (the number of minutes a day has)
-
-
+MIT
