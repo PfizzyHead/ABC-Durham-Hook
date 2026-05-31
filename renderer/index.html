@@ -21,13 +21,31 @@
     <section class="controls">
       <button id="startBtn" disabled>Loading model&hellip;</button>
       <button id="stopBtn" disabled>Stop</button>
-      <button id="saveBtn" disabled>Save transcript</button>
+      <button id="saveBtn" disabled>Download .txt</button>
       <button id="clearBtn">Clear</button>
+
+      <label class="field">
+        Model
+        <select id="modelSelect" title="Larger = more accurate, slower">
+          <option value="Xenova/whisper-tiny.en">tiny.en (fastest)</option>
+          <option value="Xenova/whisper-base.en" selected>base.en (balanced)</option>
+          <option value="Xenova/whisper-small.en">small.en (most accurate)</option>
+        </select>
+      </label>
+
+      <label class="field checkbox">
+        <input type="checkbox" id="tsToggle" checked />
+        Timestamps
+      </label>
     </section>
 
     <section class="status">
       <span id="status" class="status-pill idle">Initializing&hellip;</span>
       <span id="meter" class="meter" title="Input level"></span>
+    </section>
+
+    <section class="autosave">
+      <small id="autosave">Autosave: not started</small>
     </section>
 
     <main>

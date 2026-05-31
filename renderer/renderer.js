@@ -1,29 +1,37 @@
-// Fully-local, real-time-ish transcription of system (meeting) audio.
+// Fully-local, near-real-time transcription of system (meeting) audio.
 //
-// Pipeline:
-//   getDisplayMedia({audio:'loopback'})  ->  AudioContext @ 16 kHz
-//     -> ScriptProcessor collects mono samples
-//     -> every CHUNK_SECONDS we run Whisper (Transformers.js) on the buffer
-//     -> append recognized text to the transcript
+// Phase 2 approach — overlapping sliding window + time-based dedup:
+//   - We keep a rolling WINDOW_SECONDS buffer of 16 kHz mono audio.
+//   - Every STEP_SECONDS of new audio we transcribe the WHOLE window with
+//     word/segment timestamps. Because consecutive windows overlap by
+//     (WINDOW - STEP) seconds, words near a boundary always get transcribed
+//     with surrounding context — no more clipped words.
+//   - We dedup by ABSOLUTE TIME: each transcribed segment carries a timestamp
+//     relative to the window start, which we convert to a session-absolute
+//     time. We only emit segments that start after the last time we emitted.
 //
 // The captured audio is NEVER played back (the loopback tap is non-destructive,
-// so your earbuds already hear the meeting). The processor is connected through
-// a gain-0 node only so the audio graph keeps running without feedback.
+// so your earbuds already hear the meeting). A gain-0 node keeps the audio
+// graph running without feedback.
 
 import {
   pipeline,
   env,
 } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.3";
 
-// We want remote (Hugging Face) model weights, cached locally after first run.
 env.allowLocalModels = false;
 env.useBrowserCache = true;
 
 // ---- Tunables -------------------------------------------------------------
-const MODEL = "Xenova/whisper-base.en"; // try whisper-tiny.en (faster) or whisper-small.en (more accurate)
 const TARGET_SAMPLE_RATE = 16000; // Whisper expects 16 kHz mono
-const CHUNK_SECONDS = 6; // how much audio to transcribe per pass
+const WINDOW_SECONDS = 12; // audio context window sent to Whisper each pass
+const STEP_SECONDS = 4; // how much new audio before we re-transcribe
+const AUTOSAVE_MS = 4000; // debounce for writing the transcript to disk
+const DEDUP_SLACK = 0.4; // seconds of tolerance when deduping by time
 // ---------------------------------------------------------------------------
+
+const WINDOW_SAMPLES = WINDOW_SECONDS * TARGET_SAMPLE_RATE;
+const STEP_SAMPLES = STEP_SECONDS * TARGET_SAMPLE_RATE;
 
 const startBtn = document.getElementById("startBtn");
 const stopBtn = document.getElementById("stopBtn");
@@ -34,8 +42,12 @@ const meterEl = document.getElementById("meter");
 const transcriptEl = document.getElementById("transcript");
 const interimEl = document.getElementById("interim");
 const envEl = document.getElementById("env");
+const modelSelect = document.getElementById("modelSelect");
+const tsToggle = document.getElementById("tsToggle");
+const autosaveEl = document.getElementById("autosave");
 
 let transcriber = null;
+let activeDevice = "wasm";
 let mediaStream = null;
 let audioContext = null;
 let sourceNode = null;
@@ -43,54 +55,97 @@ let processor = null;
 let sink = null;
 
 let collecting = false;
-let pending = []; // Float32Array chunks awaiting transcription
-let pendingSamples = 0;
-let busy = false; // true while a transcription pass is running
+let busy = false; // a transcription pass is running
+
+// Rolling audio buffer.
+let ring = []; // Float32Array chunks
+let ringLength = 0; // samples currently held in `ring`
+let bufferStartSample = 0; // absolute index (from session start) of ring[0]
+let samplesSeen = 0; // total samples captured this session
+let lastPassSample = 0; // samplesSeen value at the last pass trigger
+let lastEmittedTime = 0; // absolute seconds; segments before this are dups
+
+// Transcript model: ordered entries { t: seconds, text }.
+let entries = [];
+let sessionId = null;
+let autosaveTimer = null;
+let autosavePath = null;
 
 function setStatus(text, cls) {
   statusEl.textContent = text;
   statusEl.className = "status-pill " + (cls || "idle");
 }
 
+function fmtTime(sec) {
+  const s = Math.max(0, Math.floor(sec));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
+}
+
 if (window.appInfo) {
   envEl.textContent = `Electron ${window.appInfo.versions.electron} · Chromium ${window.appInfo.versions.chrome} · ${window.appInfo.platform}`;
 }
 
-// ---- Model load -----------------------------------------------------------
-(async function loadModel() {
-  setStatus("Downloading / loading model (first run can take a minute)…", "working");
-  let device = "webgpu";
-  try {
-    transcriber = await pipeline("automatic-speech-recognition", MODEL, {
-      device: "webgpu",
-      progress_callback: (p) => {
-        if (p && p.status === "progress" && p.file) {
-          const pct = p.progress ? ` ${Math.round(p.progress)}%` : "";
-          setStatus(`Loading ${p.file}${pct}`, "working");
-        }
-      },
-    });
-  } catch (err) {
-    // No WebGPU? Fall back to WASM (CPU) — slower but works everywhere.
-    device = "wasm";
+// ---- Model load (also used when the model selector changes) ---------------
+async function loadModel(modelName) {
+  startBtn.disabled = true;
+  modelSelect.disabled = true;
+  setStatus(`Loading ${modelName} (first run downloads weights)…`, "working");
+
+  // Free any previous instance before swapping models.
+  if (transcriber) {
     try {
-      transcriber = await pipeline("automatic-speech-recognition", MODEL, {
+      await transcriber.dispose();
+    } catch (_) {
+      /* ignore */
+    }
+    transcriber = null;
+  }
+
+  const progress = (p) => {
+    if (p && p.status === "progress" && p.file) {
+      const pct = p.progress ? ` ${Math.round(p.progress)}%` : "";
+      setStatus(`Loading ${p.file}${pct}`, "working");
+    }
+  };
+
+  try {
+    transcriber = await pipeline("automatic-speech-recognition", modelName, {
+      device: "webgpu",
+      progress_callback: progress,
+    });
+    activeDevice = "webgpu";
+  } catch (_) {
+    try {
+      transcriber = await pipeline("automatic-speech-recognition", modelName, {
         device: "wasm",
+        progress_callback: progress,
       });
-    } catch (err2) {
-      setStatus("Failed to load model: " + err2.message, "error");
+      activeDevice = "wasm";
+    } catch (err) {
+      setStatus("Failed to load model: " + err.message, "error");
+      modelSelect.disabled = false;
       return;
     }
   }
-  setStatus(`Model ready (${device}). Click Start.`, "idle");
+
+  setStatus(`Model ready (${activeDevice}). Click Start.`, "idle");
   startBtn.disabled = false;
   startBtn.textContent = "Start";
-})();
+  modelSelect.disabled = false;
+}
+
+loadModel(modelSelect.value);
+
+modelSelect.addEventListener("change", () => {
+  if (collecting) return; // can't swap mid-capture
+  loadModel(modelSelect.value);
+});
 
 // ---- Start capture --------------------------------------------------------
 async function start() {
   try {
-    // Video must be requested for getDisplayMedia; we drop it immediately.
     mediaStream = await navigator.mediaDevices.getDisplayMedia({
       video: true,
       audio: true,
@@ -102,33 +157,52 @@ async function start() {
 
   mediaStream.getVideoTracks().forEach((t) => t.stop());
 
-  const audioTracks = mediaStream.getAudioTracks();
-  if (audioTracks.length === 0) {
+  if (mediaStream.getAudioTracks().length === 0) {
     setStatus("No system audio track was provided.", "error");
     return;
   }
 
-  // AudioContext resamples to 16 kHz for us.
+  // Reset session state.
+  ring = [];
+  ringLength = 0;
+  bufferStartSample = 0;
+  samplesSeen = 0;
+  lastPassSample = 0;
+  lastEmittedTime = 0;
+  sessionId = new Date().toISOString().replace(/[:.]/g, "-");
+  autosavePath = null;
+
   audioContext = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE });
   await audioContext.resume();
-
   sourceNode = audioContext.createMediaStreamSource(mediaStream);
   processor = audioContext.createScriptProcessor(4096, 1, 1);
 
   processor.onaudioprocess = (e) => {
     if (!collecting) return;
     const input = e.inputBuffer.getChannelData(0);
-    pending.push(new Float32Array(input));
-    pendingSamples += input.length;
+    const copy = new Float32Array(input);
+    ring.push(copy);
+    ringLength += copy.length;
+    samplesSeen += copy.length;
 
-    // Simple level meter (RMS).
+    // Trim from the front so we keep ~WINDOW_SECONDS of audio.
+    while (ring.length > 1 && ringLength - ring[0].length >= WINDOW_SAMPLES) {
+      const removed = ring.shift();
+      ringLength -= removed.length;
+      bufferStartSample += removed.length;
+    }
+
+    // Level meter (RMS).
     let sum = 0;
     for (let i = 0; i < input.length; i++) sum += input[i] * input[i];
-    const rms = Math.sqrt(sum / input.length);
-    meterEl.style.setProperty("--level", Math.min(100, rms * 400) + "%");
+    meterEl.style.setProperty(
+      "--level",
+      Math.min(100, Math.sqrt(sum / input.length) * 400) + "%"
+    );
 
-    if (pendingSamples >= CHUNK_SECONDS * TARGET_SAMPLE_RATE) {
-      flush();
+    if (!busy && samplesSeen - lastPassSample >= STEP_SAMPLES) {
+      lastPassSample = samplesSeen;
+      transcribePass();
     }
   };
 
@@ -144,81 +218,161 @@ async function start() {
   startBtn.disabled = true;
   stopBtn.disabled = false;
   saveBtn.disabled = false;
-  setStatus("Live — listening to system audio", "live");
+  modelSelect.disabled = true;
+  setStatus(`Live — listening (${activeDevice})`, "live");
+  scheduleAutosave();
 }
 
-// ---- Transcribe one buffered chunk ----------------------------------------
-async function flush() {
-  if (busy || pendingSamples === 0) return;
+// ---- One transcription pass over the current window -----------------------
+async function transcribePass() {
+  if (busy || ringLength === 0) return;
   busy = true;
 
-  const total = pendingSamples;
-  const audio = new Float32Array(total);
+  // Snapshot the buffer synchronously (onaudioprocess may run during awaits).
+  const startSample = bufferStartSample;
+  const audio = new Float32Array(ringLength);
   let offset = 0;
-  for (const part of pending) {
+  for (const part of ring) {
     audio.set(part, offset);
     offset += part.length;
   }
-  pending = [];
-  pendingSamples = 0;
+  const base = startSample / TARGET_SAMPLE_RATE; // window start, absolute seconds
 
   try {
     interimEl.textContent = "…transcribing…";
-    const result = await transcriber(audio);
-    const text = (result.text || "").trim();
-    if (text) {
-      transcriptEl.textContent += (transcriptEl.textContent ? " " : "") + text;
-      transcriptEl.scrollIntoView({ block: "end" });
+    const result = await transcriber(audio, { return_timestamps: true });
+
+    const chunks =
+      result && Array.isArray(result.chunks) ? result.chunks : null;
+
+    if (chunks) {
+      const fresh = [];
+      let maxEnd = lastEmittedTime;
+      for (const c of chunks) {
+        const ts = c.timestamp;
+        if (!ts || ts[0] == null) continue;
+        const absStart = base + ts[0];
+        const absEnd = base + (ts[1] == null ? ts[0] : ts[1]);
+        if (absStart >= lastEmittedTime - DEDUP_SLACK) {
+          const txt = (c.text || "").trim();
+          if (txt) fresh.push({ t: absStart, text: txt });
+          if (absEnd > maxEnd) maxEnd = absEnd;
+        }
+      }
+      if (fresh.length) {
+        // Merge this pass's new segments into one timestamped line.
+        appendEntry(fresh[0].t, fresh.map((f) => f.text).join(" "));
+      }
+      lastEmittedTime = maxEnd;
+    } else if (result && result.text) {
+      // No timestamps came back — fall back to emitting once per pass.
+      const txt = result.text.trim();
+      if (txt) appendEntry(base, txt);
+      lastEmittedTime = base + ringLength / TARGET_SAMPLE_RATE;
     }
+
     interimEl.textContent = "";
   } catch (err) {
     interimEl.textContent = "(transcription error: " + err.message + ")";
   } finally {
     busy = false;
-    // If more than a chunk piled up while we were busy, process it.
-    if (collecting && pendingSamples >= CHUNK_SECONDS * TARGET_SAMPLE_RATE) {
-      flush();
+    // If a lot piled up while we were busy, catch up.
+    if (collecting && samplesSeen - lastPassSample >= STEP_SAMPLES) {
+      lastPassSample = samplesSeen;
+      transcribePass();
     }
   }
+}
+
+// ---- Transcript rendering / persistence -----------------------------------
+function appendEntry(t, text) {
+  entries.push({ t, text });
+  renderTranscript();
+  scheduleAutosave();
+}
+
+function renderTranscript() {
+  const showTs = tsToggle.checked;
+  transcriptEl.textContent = entries
+    .map((e) => (showTs ? `[${fmtTime(e.t)}] ${e.text}` : e.text))
+    .join(showTs ? "\n" : " ");
+  transcriptEl.scrollIntoView({ block: "end" });
+}
+
+tsToggle.addEventListener("change", renderTranscript);
+
+function transcriptToText() {
+  return entries.map((e) => `[${fmtTime(e.t)}] ${e.text}`).join("\n");
+}
+
+function scheduleAutosave() {
+  if (autosaveTimer || !sessionId) return;
+  autosaveTimer = setTimeout(async () => {
+    autosaveTimer = null;
+    if (!entries.length || !window.transcripts) return;
+    try {
+      autosavePath = await window.transcripts.write(
+        sessionId,
+        transcriptToText()
+      );
+      autosaveEl.textContent = `Autosaved → ${autosavePath}`;
+    } catch (err) {
+      autosaveEl.textContent = "Autosave failed: " + err.message;
+    }
+  }, AUTOSAVE_MS);
 }
 
 // ---- Stop -----------------------------------------------------------------
 async function stop() {
   collecting = false;
-  if (pendingSamples > 0) await flush(); // catch the tail
+  if (!busy && ringLength > 0) await transcribePass(); // catch the tail
   if (processor) processor.disconnect();
   if (sink) sink.disconnect();
   if (sourceNode) sourceNode.disconnect();
   if (audioContext) await audioContext.close();
   if (mediaStream) mediaStream.getTracks().forEach((t) => t.stop());
-
   processor = sink = sourceNode = audioContext = mediaStream = null;
+
+  // Final flush to disk.
+  if (entries.length && window.transcripts && sessionId) {
+    try {
+      autosavePath = await window.transcripts.write(
+        sessionId,
+        transcriptToText()
+      );
+      autosaveEl.textContent = `Saved → ${autosavePath}`;
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
   meterEl.style.setProperty("--level", "0%");
   startBtn.disabled = false;
   stopBtn.disabled = true;
+  modelSelect.disabled = false;
   setStatus("Stopped", "idle");
 }
 
-// ---- Save / clear ---------------------------------------------------------
-function save() {
-  const text = transcriptEl.textContent.trim();
-  if (!text) return;
-  const blob = new Blob([text], { type: "text/plain" });
+// ---- Manual download / clear ----------------------------------------------
+function download() {
+  if (!entries.length) return;
+  const blob = new Blob([transcriptToText()], { type: "text/plain" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   a.href = url;
-  a.download = `meeting-transcript-${stamp}.txt`;
+  a.download = `meeting-transcript-${sessionId || "session"}.txt`;
   a.click();
   URL.revokeObjectURL(url);
 }
 
 function clear() {
+  entries = [];
+  lastEmittedTime = 0;
   transcriptEl.textContent = "";
   interimEl.textContent = "";
 }
 
 startBtn.addEventListener("click", start);
 stopBtn.addEventListener("click", stop);
-saveBtn.addEventListener("click", save);
+saveBtn.addEventListener("click", download);
 clearBtn.addEventListener("click", clear);

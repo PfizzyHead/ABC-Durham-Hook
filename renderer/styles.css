@@ -65,10 +65,40 @@ button:disabled {
   border-color: var(--accent);
 }
 
+.field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.field.checkbox {
+  cursor: pointer;
+}
+
+select {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.controls {
+  flex-wrap: wrap;
+}
+
 .status {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.autosave {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .status-pill {

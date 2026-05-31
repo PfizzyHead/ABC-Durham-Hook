@@ -6,8 +6,26 @@
 // keeps playing to your earbuds normally ("passthrough" is automatic) while we
 // also receive a copy of the audio to transcribe locally.
 
-const { app, BrowserWindow, session, desktopCapturer } = require('electron');
+const { app, BrowserWindow, session, desktopCapturer, ipcMain } = require('electron');
 const path = require('path');
+const fs = require('fs');
+
+// Where autosaved transcripts live: Documents/MeetingTranscribe/
+function transcriptDir() {
+  return path.join(app.getPath('documents'), 'MeetingTranscribe');
+}
+
+// Write (overwrite) a session transcript file and return its full path.
+// The renderer calls this on a debounce so the file always reflects the
+// latest transcript without the user having to click Save.
+ipcMain.handle('transcript:write', (_event, { sessionId, content }) => {
+  const dir = transcriptDir();
+  fs.mkdirSync(dir, { recursive: true });
+  const safeId = String(sessionId).replace(/[^0-9a-zA-Z_-]/g, '');
+  const file = path.join(dir, `transcript-${safeId}.txt`);
+  fs.writeFileSync(file, content, 'utf8');
+  return file;
+});
 
 function createWindow() {
   const win = new BrowserWindow({
