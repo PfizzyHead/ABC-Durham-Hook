@@ -14,10 +14,11 @@ browser) — and shows a **real-time, fully-local transcription** using Whisper.
 - 🪟 **Works with any meeting source.** Because it captures at the OS audio
   layer, it doesn't care which app the meeting runs in.
 
-> **Status: Phase 2.** Live captions now use an overlapping sliding window
-> (no clipped words at boundaries), tag each line with a `[mm:ss]` timestamp,
-> let you pick the Whisper model size, and **autosave** the transcript to disk
-> continuously. See *Roadmap* below.
+> **Status: Phase 3.** Adds an `AudioWorklet` capture path (no deprecated
+> APIs), an optional **Read aloud** (text-to-speech) toggle, and an
+> **experimental fully-offline mode** that loads the Whisper model from a local
+> folder instead of downloading it. Builds on Phase 2's overlapping-window
+> transcription, `[mm:ss]` timestamps, model picker, and autosave.
 
 ## How it works
 
@@ -74,14 +75,38 @@ How it stays accurate at boundaries: consecutive windows overlap by
 absolute timestamp — so a word spanning a boundary is transcribed with full
 context and only emitted once.
 
+### Read aloud (text-to-speech)
+
+Tick **Read aloud** to have each new line spoken to your default output via the
+built-in Web Speech API. It's off by default and most useful as a "re-voice"
+(e.g. you've muted the meeting and want a cleaned spoken version). Because
+synthesis is queued, it can drift behind a fast live conversation.
+
+### Fully offline (experimental)
+
+By default the Whisper weights download once from Hugging Face and are cached.
+To avoid even that first-run download (air-gapped use), you can load the model
+from a local folder:
+
+1. Download the ONNX model into `renderer/models/`, preserving the repo path,
+   e.g. `renderer/models/Xenova/whisper-base.en/...` (clone the model repo from
+   Hugging Face, which ships the ONNX weights).
+2. In `renderer/renderer.js`, set `const USE_LOCAL_MODELS = true;`.
+
+This is experimental: depending on your Electron version you may need to relax
+the page CSP / `file://` access for local fetches. The CDN path remains the
+reliable default. (The `renderer/models/` folder is git-ignored.)
+
 ## Roadmap
 
 - **Phase 1:** capture system audio + live captions + save. ✅
 - **Phase 2:** overlapping sliding-window transcription (no word cuts),
   `[mm:ss]` timestamps, model-size selector, continuous autosave to disk. ✅
-- **Phase 3:** optional bundled `whisper.cpp` for a fully offline (no first-run
-  download) build; optional text-to-speech read-back to earbuds; macOS support
-  via ScreenCaptureKit; move capture to an `AudioWorklet`.
+- **Phase 3:** `AudioWorklet` capture path, optional text-to-speech read-back,
+  experimental local/offline model loading. ✅
+- **Phase 4 (future):** bundled `whisper.cpp` native binary for a turnkey
+  offline build; macOS capture via ScreenCaptureKit; speaker diarization
+  ("who said what").
 
 ## Notes & limitations
 
@@ -93,8 +118,9 @@ context and only emitted once.
   app never plays audio — loopback is a passive tap on the OS default output, so
   there's no output stream to route. Passthrough to your earbuds is handled by
   Windows itself.
-- `ScriptProcessorNode` is deprecated but used here for simplicity; it will move
-  to an `AudioWorklet` in Phase 3.
+- Capture runs on an `AudioWorklet` (off the main thread); a gain-0 node keeps
+  it pulled without producing audible output (which would feed back into the
+  loopback tap).
 
 ## License
 

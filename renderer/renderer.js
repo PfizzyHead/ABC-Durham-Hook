@@ -19,8 +19,22 @@ import {
   env,
 } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.3";
 
-env.allowLocalModels = false;
-env.useBrowserCache = true;
+// ---- Offline models (experimental) ----------------------------------------
+// Set to true to load Whisper weights from the local ./models/ folder instead
+// of downloading them from the Hugging Face CDN on first run. To use it, place
+// the model files at e.g. renderer/models/Xenova/whisper-base.en/... (see the
+// README "Fully offline" section). When false, weights download once and are
+// cached by the browser.
+const USE_LOCAL_MODELS = false;
+
+if (USE_LOCAL_MODELS) {
+  env.allowLocalModels = true;
+  env.localModelPath = "./models/";
+  env.useBrowserCache = false;
+} else {
+  env.allowLocalModels = false;
+  env.useBrowserCache = true;
+}
 
 // ---- Tunables -------------------------------------------------------------
 const TARGET_SAMPLE_RATE = 16000; // Whisper expects 16 kHz mono
@@ -44,6 +58,7 @@ const interimEl = document.getElementById("interim");
 const envEl = document.getElementById("env");
 const modelSelect = document.getElementById("modelSelect");
 const tsToggle = document.getElementById("tsToggle");
+const ttsToggle = document.getElementById("ttsToggle");
 const autosaveEl = document.getElementById("autosave");
 
 let transcriber = null;
@@ -174,40 +189,17 @@ async function start() {
 
   audioContext = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE });
   await audioContext.resume();
+  await audioContext.audioWorklet.addModule("capture-worklet.js");
   sourceNode = audioContext.createMediaStreamSource(mediaStream);
-  processor = audioContext.createScriptProcessor(4096, 1, 1);
+  processor = new AudioWorkletNode(audioContext, "capture-processor", {
+    numberOfInputs: 1,
+    numberOfOutputs: 1,
+    channelCount: 1,
+  });
+  processor.port.onmessage = (e) => onSamples(e.data);
 
-  processor.onaudioprocess = (e) => {
-    if (!collecting) return;
-    const input = e.inputBuffer.getChannelData(0);
-    const copy = new Float32Array(input);
-    ring.push(copy);
-    ringLength += copy.length;
-    samplesSeen += copy.length;
-
-    // Trim from the front so we keep ~WINDOW_SECONDS of audio.
-    while (ring.length > 1 && ringLength - ring[0].length >= WINDOW_SAMPLES) {
-      const removed = ring.shift();
-      ringLength -= removed.length;
-      bufferStartSample += removed.length;
-    }
-
-    // Level meter (RMS).
-    let sum = 0;
-    for (let i = 0; i < input.length; i++) sum += input[i] * input[i];
-    meterEl.style.setProperty(
-      "--level",
-      Math.min(100, Math.sqrt(sum / input.length) * 400) + "%"
-    );
-
-    if (!busy && samplesSeen - lastPassSample >= STEP_SAMPLES) {
-      lastPassSample = samplesSeen;
-      transcribePass();
-    }
-  };
-
-  // Gain 0 -> destination keeps the ScriptProcessor firing without audible
-  // playback (which would otherwise feed back into the loopback capture).
+  // Gain 0 -> destination keeps the worklet pulled without audible playback
+  // (which would otherwise feed back into the loopback capture).
   sink = audioContext.createGain();
   sink.gain.value = 0;
   sourceNode.connect(processor);
@@ -221,6 +213,34 @@ async function start() {
   modelSelect.disabled = true;
   setStatus(`Live — listening (${activeDevice})`, "live");
   scheduleAutosave();
+}
+
+// ---- Handle a buffered frame from the AudioWorklet ------------------------
+function onSamples(copy) {
+  if (!collecting) return;
+  ring.push(copy);
+  ringLength += copy.length;
+  samplesSeen += copy.length;
+
+  // Trim from the front so we keep ~WINDOW_SECONDS of audio.
+  while (ring.length > 1 && ringLength - ring[0].length >= WINDOW_SAMPLES) {
+    const removed = ring.shift();
+    ringLength -= removed.length;
+    bufferStartSample += removed.length;
+  }
+
+  // Level meter (RMS).
+  let sum = 0;
+  for (let i = 0; i < copy.length; i++) sum += copy[i] * copy[i];
+  meterEl.style.setProperty(
+    "--level",
+    Math.min(100, Math.sqrt(sum / copy.length) * 400) + "%"
+  );
+
+  if (!busy && samplesSeen - lastPassSample >= STEP_SAMPLES) {
+    lastPassSample = samplesSeen;
+    transcribePass();
+  }
 }
 
 // ---- One transcription pass over the current window -----------------------
@@ -289,6 +309,17 @@ function appendEntry(t, text) {
   entries.push({ t, text });
   renderTranscript();
   scheduleAutosave();
+  speak(text);
+}
+
+// Optional: read each new line aloud to the default output (e.g. earbuds).
+// Off by default — useful as a "re-voice" when the meeting itself is muted.
+// Note: synthesis is queued, so over a long meeting it can lag behind live.
+function speak(text) {
+  if (!ttsToggle.checked || !("speechSynthesis" in window)) return;
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.rate = 1.05;
+  window.speechSynthesis.speak(utter);
 }
 
 function renderTranscript() {
@@ -325,6 +356,7 @@ function scheduleAutosave() {
 // ---- Stop -----------------------------------------------------------------
 async function stop() {
   collecting = false;
+  if ("speechSynthesis" in window) window.speechSynthesis.cancel();
   if (!busy && ringLength > 0) await transcribePass(); // catch the tail
   if (processor) processor.disconnect();
   if (sink) sink.disconnect();
@@ -370,6 +402,7 @@ function clear() {
   lastEmittedTime = 0;
   transcriptEl.textContent = "";
   interimEl.textContent = "";
+  if ("speechSynthesis" in window) window.speechSynthesis.cancel();
 }
 
 startBtn.addEventListener("click", start);
