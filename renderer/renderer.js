@@ -14,10 +14,14 @@
 // so your earbuds already hear the meeting). A gain-0 node keeps the audio
 // graph running without feedback.
 
-import {
-  pipeline,
-  env,
-} from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.3";
+// Transformers.js is loaded *dynamically* (see init() at the bottom) rather
+// than via a static import, so that if the library can't be fetched (e.g. no
+// internet on first run) the UI still loads and can show a clear error instead
+// of silently failing to initialize.
+const TRANSFORMERS_URL =
+  "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.3";
+let pipeline = null;
+let env = null;
 
 // ---- Offline models (experimental) ----------------------------------------
 // Set to true to load Whisper weights from the local ./models/ folder instead
@@ -26,15 +30,6 @@ import {
 // README "Fully offline" section). When false, weights download once and are
 // cached by the browser.
 const USE_LOCAL_MODELS = false;
-
-if (USE_LOCAL_MODELS) {
-  env.allowLocalModels = true;
-  env.localModelPath = "./models/";
-  env.useBrowserCache = false;
-} else {
-  env.allowLocalModels = false;
-  env.useBrowserCache = true;
-}
 
 // ---- Tunables -------------------------------------------------------------
 const TARGET_SAMPLE_RATE = 16000; // Whisper expects 16 kHz mono
@@ -104,6 +99,10 @@ if (window.appInfo) {
 
 // ---- Model load (also used when the model selector changes) ---------------
 async function loadModel(modelName) {
+  if (!pipeline) {
+    setStatus("Transcription library not loaded — reopen with a connection.", "error");
+    return;
+  }
   startBtn.disabled = true;
   modelSelect.disabled = true;
   setStatus(`Loading ${modelName} (first run downloads weights)…`, "working");
@@ -151,12 +150,43 @@ async function loadModel(modelName) {
   modelSelect.disabled = false;
 }
 
-loadModel(modelSelect.value);
-
 modelSelect.addEventListener("change", () => {
   if (collecting) return; // can't swap mid-capture
   loadModel(modelSelect.value);
 });
+
+// Load the transcription library, configure it, then load the model. Done
+// dynamically so a failed fetch surfaces as a clear, recoverable error.
+async function init() {
+  setStatus("Loading transcription engine…", "working");
+  try {
+    const mod = await import(TRANSFORMERS_URL);
+    pipeline = mod.pipeline;
+    env = mod.env;
+  } catch (err) {
+    modelSelect.disabled = true;
+    setStatus(
+      "Couldn't load the transcription library — check your internet connection and reopen the app. (" +
+        err.message +
+        ")",
+      "error"
+    );
+    return;
+  }
+
+  if (USE_LOCAL_MODELS) {
+    env.allowLocalModels = true;
+    env.localModelPath = "./models/";
+    env.useBrowserCache = false;
+  } else {
+    env.allowLocalModels = false;
+    env.useBrowserCache = true;
+  }
+
+  await loadModel(modelSelect.value);
+}
+
+init();
 
 // ---- Start capture --------------------------------------------------------
 async function start() {
