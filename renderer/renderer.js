@@ -124,14 +124,38 @@ async function loadModel(modelName) {
     }
   };
 
-  try {
-    transcriber = await pipeline("automatic-speech-recognition", modelName, {
-      device: "webgpu",
-      progress_callback: progress,
-    });
-    activeDevice = "webgpu";
-  } catch (_) {
+  // WebGPU is much faster, but on some machines its engine-init step can hang
+  // (no throw, no resolve) after the weights finish downloading. Race it
+  // against a timeout so we reliably fall back to CPU instead of getting stuck.
+  const withTimeout = (promise, ms, label) =>
+    Promise.race([
+      promise,
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error(`${label} timed out`)), ms)
+      ),
+    ]);
+
+  const hasWebGPU = typeof navigator !== "undefined" && "gpu" in navigator;
+
+  if (hasWebGPU) {
     try {
+      transcriber = await withTimeout(
+        pipeline("automatic-speech-recognition", modelName, {
+          device: "webgpu",
+          progress_callback: progress,
+        }),
+        30000,
+        "WebGPU load"
+      );
+      activeDevice = "webgpu";
+    } catch (_) {
+      transcriber = null; // fall through to CPU
+    }
+  }
+
+  if (!transcriber) {
+    try {
+      setStatus("Loading on CPU (slower; first time can take a minute)…", "working");
       transcriber = await pipeline("automatic-speech-recognition", modelName, {
         device: "wasm",
         progress_callback: progress,
