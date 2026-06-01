@@ -27,6 +27,9 @@ final class ImpactCaptureCoordinator {
     /// so the UI can react. Forwarded straight from `CameraSessionManager`.
     var onStatusChange: ((CameraSessionManager.Status) -> Void)?
 
+    /// Coarse capture phase changes for a thin SwiftUI bridge/test harness.
+    var onCaptureStateChange: ((CaptureSystemState) -> Void)?
+
     private let camera = CameraSessionManager()
     private let audio = AudioTriggerManager()
     private let ring = FrameRingBuffer(capacity: 720)   // 3 s @ 240 FPS
@@ -37,6 +40,12 @@ final class ImpactCaptureCoordinator {
 
     private let work = DispatchQueue(label: "golf.coordinator")
     private var isExporting = false
+
+    func updateTriggerThresholds(attackRatio: Float, brightnessRatio: Float, highBandHz: Float) {
+        audio.attackRatio = attackRatio
+        audio.brightnessRatio = brightnessRatio
+        audio.highBandHz = highBandHz
+    }
 
     /// Request camera + microphone permission up front. Call before `startSession`.
     /// Completion is invoked on an arbitrary queue with `true` only if BOTH are granted.
@@ -62,12 +71,15 @@ final class ImpactCaptureCoordinator {
         audio.synchronizationClock = camera.captureClock
         camera.start()
         try audio.start()
+        onCaptureStateChange?(.listening)
     }
 
     func stopSession() {
         audio.stop()
         camera.stop()
         ring.reset()
+        isExporting = false
+        onCaptureStateChange?(.idle)
     }
 
     // MARK: - Trigger handling
@@ -76,6 +88,7 @@ final class ImpactCaptureCoordinator {
         work.async { [weak self] in
             guard let self, !self.isExporting else { return }   // ignore until current export done
             self.isExporting = true
+            self.onCaptureStateChange?(.recording)
 
             let start = CMTimeSubtract(impactPTS, self.preRoll)
             let end   = CMTimeAdd(impactPTS, self.postRoll)
@@ -87,13 +100,16 @@ final class ImpactCaptureCoordinator {
                 let slice = self.ring.frames(in: start, end)
                 guard !slice.isEmpty else {
                     self.isExporting = false
+                    self.onCaptureStateChange?(.listening)
                     self.onClipReady?(.failure(CameraSessionManager.CaptureError.emptyWindow))
                     return
                 }
                 let url = FileManager.default.temporaryDirectory
                     .appendingPathComponent("swing-\(Int(Date().timeIntervalSince1970)).mp4")
+                self.onCaptureStateChange?(.exporting)
                 self.exporter.export(frames: slice, to: url) { result in
                     self.isExporting = false
+                    self.onCaptureStateChange?(.listening)
                     self.onClipReady?(result)
                 }
             }
