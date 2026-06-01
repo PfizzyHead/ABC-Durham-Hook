@@ -1,0 +1,171 @@
+:root {
+  --bg: #0e1116;
+  --panel: #161b22;
+  --border: #2a313c;
+  --text: #e6edf3;
+  --muted: #8b949e;
+  --accent: #2f81f7;
+  --good: #3fb950;
+  --warn: #d29922;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: 18px 22px;
+  gap: 14px;
+}
+
+header h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.subtitle {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.controls {
+  display: flex;
+  gap: 10px;
+}
+
+button {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 16px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+#startBtn:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.field.checkbox {
+  cursor: pointer;
+}
+
+select {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.controls {
+  flex-wrap: wrap;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.autosave {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.status-pill {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+
+.status-pill.idle {
+  color: var(--muted);
+}
+.status-pill.live {
+  color: var(--good);
+  border-color: var(--good);
+}
+.status-pill.error {
+  color: #f85149;
+  border-color: #f85149;
+}
+.status-pill.working {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+.meter {
+  flex: 1;
+  height: 6px;
+  background: var(--panel);
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+}
+
+.meter::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--level, 0%);
+  background: var(--good);
+  transition: width 0.08s linear;
+}
+
+main {
+  flex: 1;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px 18px;
+  overflow-y: auto;
+}
+
+.transcript {
+  white-space: pre-wrap;
+  line-height: 1.55;
+  font-size: 15px;
+}
+
+.interim {
+  color: var(--muted);
+  font-style: italic;
+  margin-top: 6px;
+}
+
+footer {
+  color: var(--muted);
+}

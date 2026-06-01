@@ -1,21 +1,14 @@
 {
-  "name": "website-change-monitor",
-  "version": "1.0.0",
-  "description": "",
+  "name": "meeting-live-transcribe",
+  "version": "0.1.0",
+  "description": "Windows desktop app that taps system (meeting) audio via WASAPI loopback and shows fully-local, real-time Whisper transcription. Audio passes through to your earbuds untouched.",
+  "main": "main.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "electron ."
   },
-  "author": "Juanma Menendez",
+  "author": "",
   "license": "MIT",
-  "dependencies": {
-    "@sendgrid/mail": "^6.4.0",
-    "body-parser": "^1.19.0",
-    "ejs": "^2.6.1",
-    "express": "^4.17.1",
-    "request": "^2.88.0",
-    "slack-notify": "^0.1.7"
-  },
   "devDependencies": {
-    "nodemon": "^1.19.1"
+    "electron": "^42.3.0"
   }
 }

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline' 'wasm-unsafe-eval'; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co https://cdn-lfs.huggingface.co https://cdn-lfs.hf.co; worker-src 'self' blob:; style-src 'self' 'unsafe-inline';"
+    />
+    <title>Meeting Live Transcribe</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Meeting Live Transcribe</h1>
+      <p class="subtitle">
+        Local Whisper transcription of your system audio &middot; passthrough to
+        earbuds &middot; nothing leaves this machine
+      </p>
+    </header>
+
+    <section class="controls">
+      <button id="startBtn" disabled>Loading model&hellip;</button>
+      <button id="stopBtn" disabled>Stop</button>
+      <button id="saveBtn" disabled>Download .txt</button>
+      <button id="clearBtn">Clear</button>
+
+      <label class="field">
+        Model
+        <select id="modelSelect" title="Larger = more accurate, slower">
+          <option value="Xenova/whisper-tiny.en">tiny.en (fastest)</option>
+          <option value="Xenova/whisper-base.en" selected>base.en (balanced)</option>
+          <option value="Xenova/whisper-small.en">small.en (most accurate)</option>
+        </select>
+      </label>
+
+      <label class="field checkbox">
+        <input type="checkbox" id="tsToggle" checked />
+        Timestamps
+      </label>
+
+      <label class="field checkbox" title="Read each new line aloud to your default output (e.g. earbuds)">
+        <input type="checkbox" id="ttsToggle" />
+        Read aloud
+      </label>
+    </section>
+
+    <section class="status">
+      <span id="status" class="status-pill idle">Initializing&hellip;</span>
+      <span id="meter" class="meter" title="Input level"></span>
+    </section>
+
+    <section class="autosave">
+      <small id="autosave">Autosave: not started</small>
+    </section>
+
+    <main>
+      <div id="transcript" class="transcript" aria-live="polite"></div>
+      <div id="interim" class="interim"></div>
+    </main>
+
+    <footer>
+      <small id="env"></small>
+    </footer>
+
+    <script type="module" src="renderer.js"></script>
+  </body>
+</html>
