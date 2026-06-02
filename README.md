@@ -1,101 +1,74 @@
-<p align="center">
- <img src="https://raw.githubusercontent.com/JuanmaMenendez/website-change-monitor/master/public/logo.png" alt="Website Change Monitor" width="300px">
-</p>
- 
- <h1 align="center"> Website Change Monitor </h1>
+# Media Grab
 
-<h3 align="center"> A small web app written in Node.js to monitor specific changes on a web page</h3>
-<br /> 
-
-<!--- BADGES-->
-
-<div align="center">
-    <img src="https://img.shields.io/badge/-website--monitor-blue.svg" alt="Website Monitor" />   
-    <a href="https://nodejs.org/en/">
-        <img src="https://img.shields.io/badge/node%40latest-%3E%3D%2010-brightgreen.svg" alt="NodeJS" /></a>   
-    <a href="https://GitHub.com/JuanmaMenendez/Website-Change-Monitor/graphs/commit-activity"> 
-        <img src="https://img.shields.io/badge/Maintained%3F-yes-green.svg" alt="Maintenance"></a>
-    <img src="https://img.shields.io/badge/contributions-welcome-orange.svg" alt="Contributions Welcome">
-    <a href="https://github.com/JuanmaMenendez/Website-Change-Monitor/blob/master/LICENSE">
-        <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
-</div>
-
-
-## Features
-
-*  Support any public web page
-
-*  Track specific parts (text, markup, css class, img, etc..)
-
-*  Custom tracking frequency (seconds, minutes, hours, days)
-
-*  Email alert notification (with [SendGrid](https://sendgrid.com/))
- 
-*  Slack alert notification 
-
-*  Daily email to confirm that the app is working
-
-*  Front page (just to check that the system is working and to ping it if necessary (Useful for Heroku) 
-
-<br /> 
+A native iOS app that lets you open any web page (logging in if it's
+password-protected), scan it for every image and video, pick the ones you want,
+and save them to a **Photos album** or a **Files folder** you name.
 
 ## How it works
 
-The App request the `urlToCheck` every `checkingFrequency` and if any of the `elementsToSearchFor` are detected, a notification is sent to your Slack channel and all the `emailsToAlert` list.
+1. **Browse** to a page in the built-in web browser. If the content is behind a
+   login, sign in right there in the app — the app keeps your session.
+2. Tap **Scan media**. The app reads the *rendered* page (including content
+   loaded by JavaScript or revealed after login) and lists every image and
+   video it finds.
+3. **Select** the items you want in a thumbnail grid (or "Select all").
+4. Tap **Download**, choose **Photos album** or **Files folder**, type a name,
+   and **Save**. Your login cookies are reused so protected media downloads
+   correctly.
 
-<br />
+| Destination | Where it lands |
+|-------------|----------------|
+| Photos album | Photos app › album with the name you typed (created if missing) |
+| Files folder | Files app › On My iPhone › Media Grab › the folder you named |
 
-## Installation
+## Project layout
 
-1. Clone this repo `git clone https://github.com/JuanmaMenendez/website-change-monitor.git`
+```
+MediaGrab.xcodeproj         Xcode project (open this)
+Info.plist                  App permissions & settings
+MediaGrab/
+  MediaGrabApp.swift        App entry point
+  ContentView.swift         Root view
+  BrowserView.swift         Address bar + web view + "Scan media"
+  WebViewModel.swift        WKWebView wrapper, cookie sync, page scan
+  MediaScanner.swift        JavaScript that finds images/videos on the page
+  MediaItem.swift           Model for a found image/video
+  MediaSelectionView.swift  Thumbnail grid with selection
+  DownloadDestinationView.swift  Pick Photos vs Files + name, with progress
+  DownloadManager.swift     Downloads files and saves to Photos/Files
+```
 
-2. Inside the "website-change-monitor" folder, run the command `npm install`
+## Building & running it (you need a Mac)
 
-3. In *server.js*, edit the *"Main configuration variables"* 
-    ```
-    urlToCheck = "http://urlyouwant.com/tocheck";
-    elementsToSearchFor = ['Text you want to watch for', 'imageYouWantToCheckItsExistence.png'];
-    checkingFrequency = 5 * 60000;  //5 minutes
-    ```
+> iOS apps can only be compiled with **Xcode on macOS**. They cannot be built on
+> Linux, so this repo holds the source; you build it on a Mac.
 
-4. **Slack** Integration
+1. Install **Xcode** (16 or newer) from the Mac App Store.
+2. Open `MediaGrab.xcodeproj`.
+3. In the **MediaGrab** target → **Signing & Capabilities**, pick your Apple ID
+   under *Team*. A free Apple ID works for installing on your own iPhone.
+   - Change the **Bundle Identifier** from `com.example.MediaGrab` to something
+     unique (e.g. `com.yourname.MediaGrab`) if Xcode complains.
+4. Plug in your iPhone (or use a Simulator), select it as the run destination,
+   and press **⌘R**.
+5. On a physical device the first launch needs you to trust the developer
+   profile: *Settings › General › VPN & Device Management › (your Apple ID) ›
+   Trust*.
 
-   4.1 Activate the [WebHooks in your WorkSpace](https://api.slack.com/incoming-webhooks) and get the corresponding 'WebHook URL'  
-   
-   4.2 In *server.js*, set the 'WebHook URL' in `SLACK_WEBHOOK_URL = 'https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX';`  
+The app targets **iOS 17+**.
 
-5. **SendGrid** Email Integration
+## Notes & limits
 
-    5.1 Create a [SendGrid Free Account](https://sendgrid.com/pricing/)
-    
-    5.2 Create and get an [API KEY with Full Access](https://app.sendgrid.com/settings/api_keys)
-    
-    5.3 In *server.js*, set the *'API KEYS'* in `SENDGRID_APY_KEY = 'AA.AAAA_AAAAAAAAAAAAA.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';`
-     
-    5.4 In *server.js*, set the sender email in the *emailFrom* variable. Code: `emailFrom = "aaa@aaa.com";`
-    
-      Now, to avoid falling into the "SPAM" folder there are two options:
+- **Streaming video** (HLS `.m3u8`, DRM-protected players like YouTube/Netflix)
+  is not downloadable — those aren't plain files. The app grabs direct
+  image/video file URLs (`.jpg`, `.png`, `.mp4`, `.mov`, etc.).
+- Photos only accepts formats it understands (e.g. `.webm` video may fail to
+  import — use the **Files** destination for those).
+- Some sites load images lazily as you scroll. If you don't see everything,
+  scroll the page, then **Scan media** again.
+- `NSAllowsArbitraryLoads` is enabled so the in-app browser can reach any site.
 
-      a) Configure SendGrid to white list your sender email.
-     
-      Go to [https://app.sendgrid.com/settings/mail_settings](https://app.sendgrid.com/settings/mail_settings) > *Address Whitelist* > *Edit* > Add your email address (Eg: *myemail@gmail.com*) > Switch to *ON*
-       
-      Note: For a less chance to fall in the SPAM folder, use an email address that you own and one of [these methods](https://sendgrid.com/blog/email-authentication-explained/) to validate it.
-     
-      b) Put any email address in the `emailFrom` variable and add it to the *white list* in the receiver email client.
-         
-    5.5 In *server.js*, set the *emailsToAlert* array. Code: `emailsToAlert = ["emailOneToSend@theAlert.com", "emailTwoToSend@theAlert.com"];` 
+## Please download responsibly
 
-<br /> 
-
-## Usage
-
-1. `node server.js`
-
-<br /> 
-
-## Extras
-
-* To update the "Working OK" email notification frequency, you can change the variable `checkingNumberBeforeWorkingOKEmail`. By default it is set to 1440 (the number of minutes a day has)
-
-
+Only download content you own or have the right to save. Respect each site's
+terms of service and applicable copyright law.

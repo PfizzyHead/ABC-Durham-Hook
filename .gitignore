@@ -1,3 +1,24 @@
-node_modules
-.idea
+# macOS
 .DS_Store
+.idea
+
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+*.xcscmblueprint
+*.moved-aside
+xcuserdata/
+*.xccheckout
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# CocoaPods / Carthage (if ever added)
+Pods/
+Carthage/Build/
