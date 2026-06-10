@@ -5,7 +5,7 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>$(DEVELOPMENT_LANGUAGE)</string>
     <key>CFBundleDisplayName</key>
-    <string>Media Grab</string>
+    <string>PagePluck</string>
     <key>CFBundleExecutable</key>
     <string>$(EXECUTABLE_NAME)</string>
     <key>CFBundleIdentifier</key>
@@ -38,7 +38,7 @@
         <string>UIInterfaceOrientationLandscapeRight</string>
     </array>
     <key>NSPhotoLibraryAddUsageDescription</key>
-    <string>Media Grab saves the images and videos you choose into your Photos library.</string>
+    <string>PagePluck saves the images and videos you choose into your Photos library.</string>
     <key>UIFileSharingEnabled</key>
     <true/>
     <key>LSSupportsOpeningDocumentsInPlace</key>

@@ -39,7 +39,7 @@ struct DownloadDestinationView: View {
                 Section {
                     Text(destination == .photos
                          ? "Creates (or reuses) an album named “\(trimmedName.isEmpty ? "…" : trimmedName)” in the Photos app."
-                         : "Saves into On My iPhone › Media Grab › \(trimmedName.isEmpty ? "…" : trimmedName) in the Files app.")
+                         : "Saves into On My iPhone › PagePluck › \(trimmedName.isEmpty ? "…" : trimmedName) in the Files app.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }

@@ -4,7 +4,7 @@ import SwiftUI
 /// that lets you navigate to a page, log in if needed, scan it for media,
 /// pick what to keep, and save it to Photos or Files.
 @main
-struct MediaGrabApp: App {
+struct PagePluckApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()

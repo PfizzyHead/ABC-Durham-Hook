@@ -1,4 +1,4 @@
-# Media Grab
+# PagePluck
 
 A native iOS app that lets you open any web page (logging in if it's
 password-protected), scan it for every image and video, pick the ones you want,
@@ -19,15 +19,15 @@ and save them to a **Photos album** or a **Files folder** you name.
 | Destination | Where it lands |
 |-------------|----------------|
 | Photos album | Photos app › album with the name you typed (created if missing) |
-| Files folder | Files app › On My iPhone › Media Grab › the folder you named |
+| Files folder | Files app › On My iPhone › PagePluck › the folder you named |
 
 ## Project layout
 
 ```
-MediaGrab.xcodeproj         Xcode project (open this)
+PagePluck.xcodeproj         Xcode project (open this)
 Info.plist                  App permissions & settings
-MediaGrab/
-  MediaGrabApp.swift        App entry point
+PagePluck/
+  PagePluckApp.swift        App entry point
   ContentView.swift         Root view
   BrowserView.swift         Address bar + web view + "Scan media"
   WebViewModel.swift        WKWebView wrapper, cookie sync, page scan
@@ -44,11 +44,11 @@ MediaGrab/
 > Linux, so this repo holds the source; you build it on a Mac.
 
 1. Install **Xcode** (16 or newer) from the Mac App Store.
-2. Open `MediaGrab.xcodeproj`.
-3. In the **MediaGrab** target → **Signing & Capabilities**, pick your Apple ID
+2. Open `PagePluck.xcodeproj`.
+3. In the **PagePluck** target → **Signing & Capabilities**, pick your Apple ID
    under *Team*. A free Apple ID works for installing on your own iPhone.
-   - Change the **Bundle Identifier** from `com.example.MediaGrab` to something
-     unique (e.g. `com.yourname.MediaGrab`) if Xcode complains.
+   - The bundle identifier is `com.joshstarin.pagepluck`; change it if Xcode
+     reports it's already in use.
 4. Plug in your iPhone (or use a Simulator), select it as the run destination,
    and press **⌘R**.
 5. On a physical device the first launch needs you to trust the developer
