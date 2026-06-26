@@ -1,0 +1,52 @@
+# XcodeGen spec — generates SwingCapture.xcodeproj (iOS data-collection app).
+#
+#   brew install xcodegen
+#   cd SwingCaptureApp
+#   xcodegen generate
+#   open SwingCapture.xcodeproj
+#
+# Change `com.example` to your org's prefix and set your Team in Signing.
+
+name: SwingCapture
+options:
+  bundleIdPrefix: com.example
+  deploymentTarget:
+    iOS: "16.0"
+
+packages:
+  SwingKinematicsEngine:
+    path: ../SwingKinematicsEngine
+
+targets:
+  SwingCapture:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+    dependencies:
+      - package: SwingKinematicsEngine
+        product: SwingKinematicsEngine
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: Swing Capture
+        UILaunchScreen: {}
+        # 240 FPS side-on capture is a landscape activity.
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationLandscapeRight
+          - UIInterfaceOrientationLandscapeLeft
+        NSCameraUsageDescription: >-
+          Records your golf swing at high frame rate to measure ball and club motion.
+        NSMicrophoneUsageDescription: >-
+          Detects the moment of impact from the sound of the strike.
+        # Make saved clips visible/extractable via the Files app for labeling.
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.SwingCapture
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.9"
+        TARGETED_DEVICE_FAMILY: "1"
+        # DEVELOPMENT_TEAM: XXXXXXXXXX

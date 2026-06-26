@@ -5,8 +5,13 @@ detector for `[club_head, ball_static, ball_flight]`, exported to **CoreML** and
 bundled in the app target. This folder is the toolchain to produce it.
 
 ```
-Phase-1 captures ─► extract_frames.py ─► label (Roboflow/CVAT) ─► train_and_export.py ─► SwingDetector.mlpackage
+Phase-1 captures ─► extract_frames.py ─► autolabel.py (draft ball boxes)
+                                              │
+                                              ▼
+                         review + add club_head (Roboflow/CVAT) ─► train_and_export.py ─► SwingDetector.mlpackage
 ```
+
+Capture the clips with the **SwingCapture** iOS app (`../SwingCaptureApp`).
 
 ## 0. Setup
 
@@ -39,6 +44,20 @@ Use Roboflow, CVAT, or Label Studio. Draw tight boxes for three classes:
   calibration, so boxes must be tight and accurate (the ball's pixel diameter
   becomes mm/pixel).
 - **`ball_flight`** — the ball once moving, post-impact.
+
+### Auto-label the ball first (saves most of the work)
+
+If you captured with a colored or marked ball, draft the ball boxes
+automatically, then only *review* them and add `club_head`:
+
+```bash
+python autolabel.py --images data/raw --impact-index 240 --color yellow
+```
+
+`--impact-index` is the frame number of impact (Phase 1 = 1.0 s pre-impact, so
+~240 at 240 FPS). It assigns `ball_static` before impact and `ball_flight`
+after, and flags every frame for manual `club_head` boxes. Import the frames +
+generated labels into Roboflow/CVAT to finish.
 
 Export in **YOLO format**. Place it as:
 

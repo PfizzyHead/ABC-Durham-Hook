@@ -8,9 +8,10 @@ This repository contains two products:
 
 | Folder | What it is |
 | --- | --- |
+| `SwingCaptureApp/` | A SwiftUI **iOS** app: the on-phone 240 FPS capture / data-collection tool (impact-triggered, saves the Phase-1 clip). |
 | `SwingKinematicsEngine/` | A Swift + C++ Swift Package: the offline analysis engine (spatial calibration, CoreML detection scaffolding, kinematic vector math). |
-| `GolfLaunchMonitorApp/` | A SwiftUI macOS app that consumes the engine: pick a capture, see the metrics. |
-| `MLModels/` | Python toolchain to train the YOLOv8-nano detector and export it to CoreML (`SwingDetector.mlpackage`). |
+| `GolfLaunchMonitorApp/` | A SwiftUI **macOS** app that consumes the engine: pick a capture, see the metrics (dev/analysis harness). |
+| `MLModels/` | Python toolchain to capture-label-train: extract frames, auto-label the ball, train YOLOv8-nano, export to CoreML (`SwingDetector.mlpackage`). |
 
 > **Platform:** Apple only (macOS 13+ / iOS 16+). The engine uses Vision/CoreML,
 > AVFoundation, and Accelerate/simd, with a dependency-free C++ core bridged via

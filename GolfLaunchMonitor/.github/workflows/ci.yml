@@ -24,12 +24,26 @@ jobs:
         working-directory: GolfLaunchMonitorApp
         run: xcodegen generate
 
-      - name: Build app (unsigned)
+      - name: Build macOS app (unsigned)
         working-directory: GolfLaunchMonitorApp
         run: |
           xcodebuild \
             -project GolfLaunchMonitor.xcodeproj \
             -scheme GolfLaunchMonitor \
             -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Generate iOS capture app project
+        working-directory: SwingCaptureApp
+        run: xcodegen generate
+
+      - name: Build iOS capture app (unsigned, simulator)
+        working-directory: SwingCaptureApp
+        run: |
+          xcodebuild \
+            -project SwingCapture.xcodeproj \
+            -scheme SwingCapture \
+            -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO \
             build
