@@ -13,9 +13,9 @@ options:
   deploymentTarget:
     iOS: "16.0"
 
-packages:
-  SwingKinematicsEngine:
-    path: ../SwingKinematicsEngine
+# The capture app is pure AVFoundation/SwiftUI and does not depend on the
+# analysis engine — keeping it dependency-free makes the on-device build simple.
+# (Re-add SwingKinematicsEngine here later if you want on-device analysis.)
 
 targets:
   SwingCapture:
@@ -23,9 +23,6 @@ targets:
     platform: iOS
     sources:
       - Sources
-    dependencies:
-      - package: SwingKinematicsEngine
-        product: SwingKinematicsEngine
     info:
       path: Info.plist
       properties:
