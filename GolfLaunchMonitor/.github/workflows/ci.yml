@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -switch /Applications/Xcode_15.4.app
+
+      - name: Engine unit tests (SwiftPM)
+        run: swift test --package-path SwingKinematicsEngine
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate app project
+        working-directory: GolfLaunchMonitorApp
+        run: xcodegen generate
+
+      - name: Build app (unsigned)
+        working-directory: GolfLaunchMonitorApp
+        run: |
+          xcodebuild \
+            -project GolfLaunchMonitor.xcodeproj \
+            -scheme GolfLaunchMonitor \
+            -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            build

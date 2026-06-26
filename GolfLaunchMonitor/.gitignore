@@ -1,0 +1,21 @@
+# macOS
+.DS_Store
+
+# Swift Package Manager
+/.build
+.swiftpm/
+Package.resolved
+
+# Xcode / XcodeGen
+# The .xcodeproj is generated from project.yml by `xcodegen generate`.
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+DerivedData/
+build/
+*.xcuserstate
+
+# Secrets / signing
+*.p12
+*.mobileprovision
+ExportOptions.plist
