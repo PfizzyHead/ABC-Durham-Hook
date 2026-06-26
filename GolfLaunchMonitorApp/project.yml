@@ -1,0 +1,44 @@
+# XcodeGen spec — reproducibly generates GolfLaunchMonitor.xcodeproj.
+#
+#   brew install xcodegen        # one time
+#   cd GolfLaunchMonitorApp
+#   xcodegen generate            # creates GolfLaunchMonitor.xcodeproj
+#   open GolfLaunchMonitor.xcodeproj
+#
+# Change `com.example` to your organization's reverse-DNS prefix, then set the
+# Team under Signing & Capabilities in Xcode (or via DEVELOPMENT_TEAM below).
+
+name: GolfLaunchMonitor
+options:
+  bundleIdPrefix: com.example
+  deploymentTarget:
+    macOS: "13.0"
+  createIntermediateGroups: true
+
+packages:
+  SwingKinematicsEngine:
+    # Local path to the Swift package that lives alongside this app.
+    path: ../SwingKinematicsEngine
+
+targets:
+  GolfLaunchMonitor:
+    type: application
+    platform: macOS
+    sources:
+      - Sources/GolfLaunchMonitorApp
+    dependencies:
+      - package: SwingKinematicsEngine
+        product: SwingKinematicsEngine
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.GolfLaunchMonitor
+        PRODUCT_NAME: Golf Launch Monitor
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.9"
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_ENTITLEMENTS: Sources/GolfLaunchMonitorApp/GolfLaunchMonitor.entitlements
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.sports
+        INFOPLIST_KEY_NSHumanReadableCopyright: ""
+        # Fill in your 10-character Apple Developer Team ID to auto-sign:
+        # DEVELOPMENT_TEAM: XXXXXXXXXX
