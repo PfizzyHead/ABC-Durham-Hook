@@ -1,0 +1,21 @@
+# YOLOv8 dataset config for golf-swing object detection.
+#
+# Expected folder layout (standard YOLO format), relative to `path`:
+#   data/
+#     images/train/*.jpg      labels/train/*.txt
+#     images/val/*.jpg        labels/val/*.txt
+#
+# Each label .txt has one line per object:
+#   <class_index> <cx> <cy> <w> <h>      (all normalized 0..1, box center + size)
+#
+# IMPORTANT: the class order below defines the class indices and the CoreML
+# label strings. It must match the SwingObjectLabel raw values in the Swift app.
+
+path: ./data
+train: images/train
+val: images/val
+
+names:
+  0: club_head
+  1: ball_static
+  2: ball_flight

@@ -10,6 +10,7 @@ This repository contains two products:
 | --- | --- |
 | `SwingKinematicsEngine/` | A Swift + C++ Swift Package: the offline analysis engine (spatial calibration, CoreML detection scaffolding, kinematic vector math). |
 | `GolfLaunchMonitorApp/` | A SwiftUI macOS app that consumes the engine: pick a capture, see the metrics. |
+| `MLModels/` | Python toolchain to train the YOLOv8-nano detector and export it to CoreML (`SwingDetector.mlpackage`). |
 
 > **Platform:** Apple only (macOS 13+ / iOS 16+). The engine uses Vision/CoreML,
 > AVFoundation, and Accelerate/simd, with a dependency-free C++ core bridged via
@@ -47,11 +48,13 @@ Set your Team under **Signing & Capabilities**, change the bundle-ID prefix in
 
 ## Status
 
-The engine and app are fully wired. The one remaining input is a **YOLOv8-nano
-object-detection model trained on `[club_head, ball_static, ball_flight]`,
-exported to CoreML**. Until it is bundled, the app intentionally reports that no
-model is loaded rather than producing misleading numbers. Wire the model into
-`SwingAnalysisViewModel.makeDetector` (snippet in that file).
+The engine and app are fully wired, and the app **auto-loads** a bundled
+`SwingDetector` CoreML model on launch. The one remaining input is the model
+itself — a **YOLOv8-nano trained on `[club_head, ball_static, ball_flight]`**.
+Produce it with the `MLModels/` toolchain, drag the resulting
+`SwingDetector.mlpackage` into the app target, and it works with no code change.
+Until then the app intentionally reports that no model is loaded rather than
+producing misleading numbers.
 
 ## License
 
