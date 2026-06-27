@@ -3,7 +3,7 @@ import AVFoundation
 
 struct ContentView: View {
     @StateObject private var coordinator = CaptureCoordinator()
-    @State private var shareURL: URL?
+    @State private var shareItem: ShareItem?
 
     var body: some View {
         ZStack {
@@ -13,7 +13,7 @@ struct ContentView: View {
             overlay
         }
         .onAppear { coordinator.start() }
-        .sheet(item: $shareURL) { url in ShareSheet(items: [url]) }
+        .sheet(item: $shareItem) { item in ShareSheet(items: [item.url]) }
     }
 
     private var overlay: some View {
@@ -23,7 +23,7 @@ struct ContentView: View {
                 Spacer()
                 if !coordinator.savedClips.isEmpty {
                     Button {
-                        shareURL = coordinator.savedClips.first
+                        if let url = coordinator.savedClips.first { shareItem = ShareItem(url: url) }
                     } label: {
                         Label("\(coordinator.savedClips.count)", systemImage: "square.and.arrow.up")
                             .padding(8)
@@ -106,6 +106,13 @@ struct ContentView: View {
     }
 }
 
+/// Identifiable wrapper so a clip URL can drive `.sheet(item:)` without a
+/// retroactive conformance on `URL`.
+struct ShareItem: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
 /// UIKit share sheet bridge for exporting clips out of the app.
 struct ShareSheet: UIViewControllerRepresentable {
     let items: [Any]
@@ -114,5 +121,3 @@ struct ShareSheet: UIViewControllerRepresentable {
     }
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }
-
-extension URL: Identifiable { public var id: String { absoluteString } }

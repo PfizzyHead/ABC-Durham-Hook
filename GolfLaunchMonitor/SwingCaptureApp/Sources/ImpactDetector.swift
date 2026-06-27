@@ -35,7 +35,7 @@ final class ImpactDetector {
             bufferListSize: MemoryLayout<AudioBufferList>.size,
             blockBufferAllocator: nil,
             blockBufferMemoryAllocator: nil,
-            flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
+            flags: UInt32(kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment),
             blockBufferOut: &blockBuffer
         )
         guard status == noErr, let data = audioBufferList.mBuffers.mData else { return }
